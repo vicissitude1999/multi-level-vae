@@ -1,19 +1,21 @@
 import os
 import numpy as np
 from itertools import cycle
+import pickle
+import random
 
 import torch
 import torch.optim as optim
 from torchvision import datasets
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
+from torch.utils.data import Dataset, DataLoader
 
 from utils import weights_init
 from utils import transform_config
 from networks import Encoder, Decoder
-from torch.utils.data import DataLoader
 from utils import imshow_grid, mse_loss, reparameterize, group_wise_reparameterize, accumulate_group_evidence
-
+from alternate_data_loader import DoubleUniNormal
 
 def training_procedure(FLAGS):
     """
@@ -33,7 +35,7 @@ def training_procedure(FLAGS):
     """
     variable definition
     """
-    X = torch.FloatTensor(FLAGS.batch_size, 1, FLAGS.image_size, FLAGS.image_size)
+    X = torch.FloatTensor(FLAGS.batch_size, 1)
 
     '''
     add option to run on GPU
@@ -68,9 +70,9 @@ def training_procedure(FLAGS):
             log.write('Epoch\tIteration\tReconstruction_loss\tStyle_KL_divergence_loss\tClass_KL_divergence_loss\n')
 
     # load data set and create data loader instance
-    print('Loading MNIST dataset...')
-    mnist = datasets.MNIST(root='mnist', download=True, train=True, transform=transform_config)
-    loader = cycle(DataLoader(mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
+    print('Loading time series data...')
+    mnist = DoubleUniNormal('DoubleUniNormal_theta=1_n=1500') # here mnist is just an alias
+    loader = cycle(DataLoader(mnist, batch_size=FLAGS.batch_size, shuffle=True, drop_last=True))
 
     # initialize summary writer
     writer = SummaryWriter()
@@ -79,10 +81,12 @@ def training_procedure(FLAGS):
         print('')
         print('Epoch #' + str(epoch) + '..........................................................................')
 
+        total_loss = 0
+
         for iteration in range(int(len(mnist) / FLAGS.batch_size)):
             # load a mini-batch
             image_batch, labels_batch = next(loader)
-
+            
             # set zero_grad for the optimizer
             auto_encoder_optimizer.zero_grad()
 
@@ -122,6 +126,8 @@ def training_procedure(FLAGS):
             reconstruction_error = FLAGS.reconstruction_coef * mse_loss(reconstructed_images, Variable(X))
             reconstruction_error.backward()
 
+            total_loss += style_kl_divergence_loss + class_kl_divergence_loss + reconstruction_error
+
             auto_encoder_optimizer.step()
 
             if (iteration + 1) % 50 == 0:
@@ -156,3 +162,5 @@ def training_procedure(FLAGS):
         if (epoch + 1) % 5 == 0 or (epoch + 1) == FLAGS.end_epoch:
             torch.save(encoder.state_dict(), os.path.join('checkpoints', FLAGS.encoder_save))
             torch.save(decoder.state_dict(), os.path.join('checkpoints', FLAGS.decoder_save))
+        
+        print(total_loss)

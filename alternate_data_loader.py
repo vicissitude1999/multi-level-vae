@@ -1,5 +1,6 @@
 import torch
 import random
+import pickle
 
 from torchvision import datasets
 from utils import transform_config
@@ -30,3 +31,28 @@ class MNIST_Paired(Dataset):
         # return another image of the same class randomly selected from the data dictionary
         # this is done to simulate pair-wise labeling of data
         return image, random.SystemRandom().choice(self.data_dict[label.item()]), label
+
+
+class DoubleUniNormal(Dataset):
+    def __init__(self, dsname):
+        file_name = '/home/renyi/Documents/InceptionTime/data/original/' + dsname + '.pickle'
+        with open(file_name, 'rb') as f:
+            dataset = pickle.load(f)
+        self.x_train, self.y_train, self.x_test, self.y_test = dataset
+        self.x_test = self.x_test.astype(float)
+    
+    def __len__(self):
+        return self.x_train.size
+
+    def __getitem__(self, idx):
+        _, T = self.x_train.shape # 1500 by 100
+        row = idx // T
+        column = idx % T
+
+        if column < self.y_train[row]:
+            label = 2*row
+        else:
+            label = 2*row + 1
+        
+        return (self.x_train[row, column].reshape(1), label)
+

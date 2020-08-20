@@ -10,7 +10,7 @@ from torchvision.transforms import Compose, ToTensor
 transform_config = Compose([ToTensor()])
 
 
-def accumulate_group_evidence(class_mu, class_logvar, labels_batch, is_cuda):
+def accumulate_group_evidence(class_mu, class_logvar, labels_batch, is_cuda=True):
     """
     :param class_mu: mu values for class latent embeddings of each sample in the mini-batch
     :param class_logvar: logvar values for class latent embeddings for each sample in the mini-batch
@@ -23,7 +23,7 @@ def accumulate_group_evidence(class_mu, class_logvar, labels_batch, is_cuda):
     mu_dict = {}
 
     # convert logvar to variance for calculations
-    class_var = class_logvar.exp_()
+    class_var = class_logvar.exp()
 
     # calculate var inverse for each group using group vars
     for i in range(len(labels_batch)):
@@ -82,6 +82,9 @@ def mse_loss(input, target):
 def l1_loss(input, target):
     return torch.sum(torch.abs(input - target)) / input.data.nelement()
 
+def normal_density(eps):
+    # eps is a 1 by 1 tensor
+    return 1
 
 def reparameterize(training, mu, logvar):
     if training:
