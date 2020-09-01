@@ -29,7 +29,7 @@ parser.add_argument('--log_file', type=str, default='log.txt', help="text file t
 
 parser.add_argument('--load_saved', type=bool, default=False, help="flag to indicate if a saved model will be loaded")
 parser.add_argument('--start_epoch', type=int, default=0, help="flag to set the starting epoch for training")
-parser.add_argument('--end_epoch', type=int, default=400, help="flag to indicate the final epoch of training")
+parser.add_argument('--end_epoch', type=int, default=50, help="flag to indicate the final epoch of training")
 
 FLAGS = parser.parse_args()
 

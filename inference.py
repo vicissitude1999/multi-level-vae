@@ -55,8 +55,6 @@ def run_through_network(X, labels_batch):
     class_latent_embeddings = group_wise_reparameterize(
         training=True, mu=grouped_mu, logvar=grouped_logvar, labels_batch=labels_batch, cuda=FLAGS.cuda
     )
-    #print(style_latent_embeddings)
-    #print(class_latent_embeddings)
 
     reconstructed_images = decoder(style_latent_embeddings, class_latent_embeddings)
 
@@ -122,12 +120,6 @@ if __name__ == '__main__':
     print('Loading MNIST paired dataset...')
     paired_mnist = MNIST_Paired(root='mnist', download=True, train=False, transform=transform_config)
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
-    '''
-    print('Loading double uninormal dataset...')
-    paired_mnist = DoubleUniNormal('DoubleUniNormal_theta=1_n=1500')
-    loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
-
-    '''
     image_array = []
     for i in range(0, 11):
         image_array.append([])
@@ -256,13 +248,17 @@ if __name__ == '__main__':
     plt.savefig('reconstructed_images/inference.png', bbox_inches='tight', pad_inches=0, transparent=True)
     plt.clf()
     '''
+
+    print('Loading double uninormal dataset...')
+    paired_mnist = DoubleUniNormal('DoubleUniNormal_theta=1_n=1500')
+    loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
     X = torch.FloatTensor(FLAGS.batch_size, 1)
 
     # test data 
     test_data = torch.from_numpy(paired_mnist.x_test).float()
 
     for i in range(len(test_data)):
-        if i == 2:
+        if i == 1: # Running on the i-th test data
             print('Running X_'+str(i))
             print(paired_mnist.y_test[i])
             print()
@@ -289,7 +285,8 @@ if __name__ == '__main__':
                     content = decoder_content_input.expand(g.size(0), 1)
 
                     optimizer = optim.Adam(
-                        [decoder_style_input, decoder_content_input]
+                        [decoder_style_input, decoder_content_input],
+                        lr = 0.01 # this may be an important parameter
                     )
 
                     for iterations in range(500):

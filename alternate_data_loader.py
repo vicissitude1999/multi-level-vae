@@ -35,7 +35,7 @@ class MNIST_Paired(Dataset):
 
 class DoubleUniNormal(Dataset):
     def __init__(self, dsname):
-        file_name = '/home/renyi/Documents/InceptionTime/data/original/' + dsname + '.pickle'
+        file_name = '/home/renyi/Documents/mlvae/multi-level-vae/data/original/' + dsname + '.pickle'
         with open(file_name, 'rb') as f:
             dataset = pickle.load(f)
         self.x_train, self.y_train, self.x_test, self.y_test = dataset
