@@ -1,6 +1,6 @@
 import torch
 import random
-import pickle
+import numpy as np
 
 from torchvision import datasets
 from utils import transform_config
@@ -33,26 +33,110 @@ class MNIST_Paired(Dataset):
         return image, random.SystemRandom().choice(self.data_dict[label.item()]), label
 
 
+class experiment1(Dataset):
+    def __init__(self):
+        self.mnist = datasets.MNIST(root='mnist', download=True, train=True, transform=transform_config)
+        self.mnist.data = np.true_divide(self.mnist.data, 255)
+        # data is X, label is y
+        outputs_to_concat = []
+        for idx in range(5):
+            indices1 = self.mnist.targets == 2*idx
+            tmp1 = self.mnist.data[indices1]
+            first_5000 = tmp1.view(tmp1.size(0), -1)[0:5000]
+            first_5000 = torch.transpose(first_5000, 0, 1)
+
+            indices2 = self.mnist.targets == (2*idx+1)
+            tmp2 = self.mnist.data[indices2]
+            second_5000 = tmp2.view(tmp2.size(0), -1)[0:5000]
+            second_5000 = torch.transpose(second_5000, 0, 1)
+        
+            row = torch.cat((first_5000, second_5000), dim=1)
+            outputs_to_concat.append(row)
+
+        self.sample = torch.stack(outputs_to_concat, dim=0)
+
+
+    def __len__(self):
+        return 50000
+    
+    def __getitem__(self, idx):
+        d1 = idx // 10000
+        d2 = idx % 10000
+        if d2 < 5000:
+            label = 2*d1
+        else:
+            label = 2*d1 + 1
+
+        return (self.sample[d1, :, d2].view(1, 28, 28), label)
+
+
+class experiment3(Dataset):
+    def __init__(self, n, T):
+        self.n = n
+        self.mnist = datasets.MNIST(root='mnist', download=True, train=True, transform=transform_config)
+        self.mnist.data = np.true_divide(self.mnist.data, 255)
+        self.labels = []
+        self.T = int(T)
+
+        # data is X, label is y
+        outputs_to_concat = []
+        possible_cps = [T//2, T//4, T//3, T//5]
+        cps_to_concat = []
+        
+        for i in range(n):
+            candidates = random.sample(range(10), 2)
+            i1 = min(candidates)
+            i2 = max(candidates)
+
+            cp = random.sample(possible_cps, 1)
+
+            indices1 = self.mnist.targets == i1
+            tmp1 = self.mnist.data[indices1]
+            first_5000 = tmp1.view(tmp1.size(0), -1)[0:cp]
+            first_5000 = torch.transpose(first_5000, 0, 1)
+
+            indices2 = self.mnist.targets == i2
+            tmp2 = self.mnist.data[indices2]
+            second_5000 = tmp2.view(tmp2.size(0), -1)[0:T-cp]
+            second_5000 = torch.transpose(second_5000, 0, 1)
+        
+            row = torch.cat((first_5000, second_5000), dim=1)
+            outputs_to_concat.append(row)
+
+            self.labels.append([i1, i2])
+
+        self.sample = torch.stack(outputs_to_concat, dim=0)
+
+    def __len__(self):
+        return self.T*self.n
+    
+    def __getitem__(self, idx):
+        d1 = idx // self.T
+        d2 = idx % self.T
+        if d2 < self.T//4:
+            label = self.labels[d1][0]
+        else:
+            label = self.labels[d1][1]
+
+        # print(self.sample[d1, :, d2])
+        return (self.sample[d1, :, d2].view(1, 28, 28), label)
+
 class DoubleUniNormal(Dataset):
     def __init__(self, dsname):
-        file_name = '/home/renyi/Documents/mlvae/multi-level-vae/data/original/' + dsname + '.pickle'
+        file_name = root_dir + 'data/original/' + dsname + '.pickle'
         with open(file_name, 'rb') as f:
             dataset = pickle.load(f)
         self.x_train, self.y_train, self.x_test, self.y_test = dataset
-        self.x_test = self.x_test.astype(float)
     
     def __len__(self):
         return self.x_train.size
 
     def __getitem__(self, idx):
-        _, T = self.x_train.shape # 1500 by 100
+        _, T = self.x_train.shape
         row = idx // T
         column = idx % T
-
         if column < self.y_train[row]:
             label = 2*row
         else:
             label = 2*row + 1
-        
-        return (self.x_train[row, column].reshape(1), label)
-
+        return (self.x_train[row][column], label)

@@ -1,10 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
-'''
-log_names = ['log.txt']
 
-for log_name in log_names:
-    data = np.loadtxt(log_name, skiprows=1)
+'''
+log_names = ['log_exp_1.txt', 'log_exp_3_T=200.txt', 'log_exp_3_T=500.txt',
+'log_exp_3_T=1000.txt', 'log_exp_3_T=2000.txt']
+title_names = ['experiment 1, n = 5, T = 10k',
+'experiment 3, n = 100, T = 200',
+'experiment 3, n = 100, T = 500',
+'experiment 3, n = 100, T = 1000',
+'experiment 3, n = 100, T = 2000']
+
+for i in range(len(log_names)):
+    data = np.loadtxt(log_names[i], skiprows=1)
 
     losses = []
     curr = 0
@@ -24,15 +31,16 @@ for log_name in log_names:
     plt.scatter(x, losses, s=0.8)
     plt.xlabel('epochs')
     plt.ylabel('training losses')
-    plt.title('MLVAE on double univatiate normal data, n = 1500, T = 100')
-    plt.show()
+    plt.title(title_names[i])
+    plt.savefig('loss_curves/' + log_names[i][0: -4] + '.jpg')
+    plt.close()
 '''
 
 errors = np.loadtxt('errors.txt')
-etas = np.array(range(80)) + 10
+etas = range(50-20, 50+40)
 plt.scatter(etas, errors, s=0.9)
-plt.axvline(x=65)
+# plt.axvline(x=65)
 plt.xlabel('etas')
 plt.ylabel('squared errors')
-plt.title('Approach 2. Squared errors for a single data X_0 in n=1500 theta=1')
+plt.title('Approach 2. Squared errors for Experiment 3 T = 200')
 plt.show()

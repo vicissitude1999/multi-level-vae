@@ -8,12 +8,8 @@ import random
 import pickle
 from torchvision import datasets
 from torch.autograd import Variable
-from torch.distributions import Normal
-import math
 from alternate_data_loader import MNIST_Paired
-from alternate_data_loader import DoubleUniNormal
-import torch.optim as optim
-from utils import accumulate_group_evidence, group_wise_reparameterize, reparameterize, mse_loss
+from utils import accumulate_group_evidence, group_wise_reparameterize, reparameterize
 
 import matplotlib.pyplot as plt
 from utils import transform_config
@@ -23,76 +19,23 @@ from torch.utils.data import DataLoader
 from mpl_toolkits.axes_grid1 import ImageGrid
 
 parser = argparse.ArgumentParser()
-torch.autograd.set_detect_anomaly(True)
 
 # add arguments
-parser.add_argument('--cuda', type=bool, default=True, help="run the following code on a GPU")
+parser.add_argument('--cuda', type=bool, default=False, help="run the following code on a GPU")
 parser.add_argument('--reference_data', type=str, default='fixed', help="generate output using random digits or fixed reference")
 parser.add_argument('--accumulate_evidence', type=str, default=False, help="accumulate class evidence before producing swapped images")
-parser.add_argument('--batch_size', type=int, default=1, help="batch size for training")
+
+parser.add_argument('--batch_size', type=int, default=256, help="batch size for training")
 parser.add_argument('--image_size', type=int, default=28, help="height and width of the image")
 parser.add_argument('--num_channels', type=int, default=1, help="number of channels in the images")
 parser.add_argument('--num_classes', type=int, default=10, help="number of classes in the dataset")
 
-parser.add_argument('--style_dim', type=int, default=1, help="dimension of varying factor latent space")
-parser.add_argument('--class_dim', type=int, default=1, help="dimension of common factor latent space")
+parser.add_argument('--style_dim', type=int, default=10, help="dimension of varying factor latent space")
+parser.add_argument('--class_dim', type=int, default=10, help="dimension of common factor latent space")
 
 # paths to save models
 parser.add_argument('--encoder_save', type=str, default='encoder', help="model save for encoder")
 parser.add_argument('--decoder_save', type=str, default='decoder', help="model save for decoder")
-
-torch.set_printoptions(precision=8)
-
-def run_through_network(X, labels_batch):
-    style_mu, style_logvar, class_mu, class_logvar = encoder(Variable(X))
-    grouped_mu, grouped_logvar = accumulate_group_evidence(
-        class_mu.data, class_logvar.data, labels_batch, FLAGS.cuda
-    )
-    importance_sampling(X[0], style_mu[0], style_logvar[0], class_mu[0], class_logvar[0])
-
-    # reconstruct samples
-    style_latent_embeddings = reparameterize(training=True, mu=style_mu, logvar=style_logvar)
-    class_latent_embeddings = group_wise_reparameterize(
-        training=True, mu=grouped_mu, logvar=grouped_logvar, labels_batch=labels_batch, cuda=FLAGS.cuda
-    )
-
-    reconstructed_images = decoder(style_latent_embeddings, class_latent_embeddings)
-
-    return reconstructed_images
-
-def importance_sampling(sample, style_mu, style_logvar, grouped_mu, grouped_logvar):
-    print(style_mu)
-    print(style_logvar.exp())
-
-    print(grouped_mu)
-    print(grouped_logvar.exp())
-    #std = logvar.mul(0.5).exp_()
-    eps_s = torch.FloatTensor(128, 1)
-    eps_s.normal_()
-
-    eps_g = torch.FloatTensor(128, 1)
-    eps_g.normal_()
-
-    q_s = Normal(0, 1).log_prob(eps_s).exp()
-    print(q_s)
-    q_g = Normal(0, 1).log_prob(eps_g).exp()
-
-    reparam_s = eps_s.mul(style_logvar.mul(0.5).exp()).add(style_mu)
-    reparam_g = eps_g.mul(grouped_logvar.mul(0.5).exp()).add(grouped_mu)
-
-    p_s = Normal(0, 1).log_prob(reparam_s).exp()
-    p_g = Normal(0, 1).log_prob(reparam_g).exp()
-
-    reconstructed = decoder(reparam_s, reparam_g)
-
-    px_cond = Normal(0, 1).log_prob(sample - reconstructed).exp()
-
-    summand = px_cond * p_s * p_g / q_s / q_g
-    print(summand)
-
-    likelihood = torch.sum(summand) / summand.size(0)
-    
-
 
 
 FLAGS = parser.parse_args()
@@ -109,17 +52,14 @@ if __name__ == '__main__':
     decoder.load_state_dict(
         torch.load(os.path.join('checkpoints', FLAGS.decoder_save), map_location=lambda storage, loc: storage))
 
-    encoder.cuda()
-    decoder.cuda()
-
     if not os.path.exists('reconstructed_images'):
         os.makedirs('reconstructed_images')
 
     # load data set and create data loader instance
-    '''
     print('Loading MNIST paired dataset...')
     paired_mnist = MNIST_Paired(root='mnist', download=True, train=False, transform=transform_config)
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
+
     image_array = []
     for i in range(0, 11):
         image_array.append([])
@@ -247,88 +187,3 @@ if __name__ == '__main__':
 
     plt.savefig('reconstructed_images/inference.png', bbox_inches='tight', pad_inches=0, transparent=True)
     plt.clf()
-    '''
-
-    print('Loading double uninormal dataset...')
-    paired_mnist = DoubleUniNormal('DoubleUniNormal_theta=1_n=1500')
-    loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
-    X = torch.FloatTensor(FLAGS.batch_size, 1)
-
-    # test data 
-    test_data = torch.from_numpy(paired_mnist.x_test).float()
-
-    for i in range(len(test_data)):
-        if i == 1: # Running on the i-th test data
-            print('Running X_'+str(i))
-            print(paired_mnist.y_test[i])
-            print()
-            X_i = test_data[i] # 1-d vector
-            l = X_i.size(0)
-
-            errors = []
-
-            for eta in range(10, 90):
-                print('\tRunning eta =', eta)
-                g1 = X_i[0:eta].view(eta, -1).cuda()
-                g2 = X_i[eta:l].view(l-eta, -1).cuda()
-
-                total_error = 0
-                for g in [g1, g2]:
-                    style_mu, _, class_mu, class_logvar = encoder(g)
-                    grouped_mu, _ = accumulate_group_evidence(
-                        class_mu.data, class_logvar.data, torch.zeros(g.size(0), 1)
-                    )
-
-                    decoder_style_input = torch.tensor(style_mu, requires_grad = True, device='cuda')
-                    decoder_content_input = torch.tensor(grouped_mu[0], requires_grad = True, device='cuda')
-
-                    content = decoder_content_input.expand(g.size(0), 1)
-
-                    optimizer = optim.Adam(
-                        [decoder_style_input, decoder_content_input],
-                        lr = 0.01 # this may be an important parameter
-                    )
-
-                    for iterations in range(500):
-                        optimizer.zero_grad()
-
-                        reconstructed = decoder(decoder_style_input, content)
-                        reconstruction_error = torch.sum((reconstructed - g).pow(2))
-                        # print(reconstruction_error)
-                        reconstruction_error.backward(retain_graph = True)
-
-                        optimizer.step()
-                    
-                    # print(reconstruction_error)
-                    total_error += reconstruction_error
-                
-                errors.append(total_error)
-
-                with open('errors.txt', 'w') as f:
-                    for e in errors:
-                        f.write("%s\n" % e.item())
-
-
-            
-    '''
-    image_batch, labels_batch = next(loader)
-
-    X.copy_(image_batch)
-
-    style_mu, style_logvar, class_mu, class_logvar = encoder(Variable(X))
-    
-    grouped_mu, grouped_logvar = accumulate_group_evidence(
-        class_mu.data, class_logvar.data, labels_batch, FLAGS.cuda
-    )
-
-    # reconstruct samples
-    style_latent_embeddings = reparameterize(training=True, mu=style_mu, logvar=style_logvar)
-    class_latent_embeddings = group_wise_reparameterize(
-        training=True, mu=grouped_mu, logvar=grouped_logvar, labels_batch=labels_batch, cuda=FLAGS.cuda
-    )
-
-    reconstructed_images = decoder(style_latent_embeddings, class_latent_embeddings)
-
-    print(X.view(1, -1))
-    print(reconstructed_images.view(1, -1))
-    '''

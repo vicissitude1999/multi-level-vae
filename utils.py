@@ -23,7 +23,7 @@ def accumulate_group_evidence(class_mu, class_logvar, labels_batch, is_cuda=True
     mu_dict = {}
 
     # convert logvar to variance for calculations
-    class_var = class_logvar.exp()
+    class_var = class_logvar.exp_()
 
     # calculate var inverse for each group using group vars
     for i in range(len(labels_batch)):
@@ -82,9 +82,6 @@ def mse_loss(input, target):
 def l1_loss(input, target):
     return torch.sum(torch.abs(input - target)) / input.data.nelement()
 
-def normal_density(eps):
-    # eps is a 1 by 1 tensor
-    return 1
 
 def reparameterize(training, mu, logvar):
     if training:

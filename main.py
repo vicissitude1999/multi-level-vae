@@ -14,8 +14,8 @@ parser.add_argument('--initial_learning_rate', type=float, default=0.001, help="
 parser.add_argument('--beta_1', type=float, default=0.9, help="default beta_1 val for adam")
 parser.add_argument('--beta_2', type=float, default=0.999, help="default beta_2 val for adam")
 
-parser.add_argument('--style_dim', type=int, default=1, help="dimension of varying factor latent space")
-parser.add_argument('--class_dim', type=int, default=1, help="dimension of common factor latent space")
+parser.add_argument('--style_dim', type=int, default=10, help="dimension of varying factor latent space")
+parser.add_argument('--class_dim', type=int, default=10, help="dimension of common factor latent space")
 parser.add_argument('--num_classes', type=int, default=10, help="number of classes on which the data set trained")
 
 parser.add_argument('--reconstruction_coef', type=float, default=1., help="coefficient for reconstruction term")
