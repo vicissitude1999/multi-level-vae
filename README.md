@@ -1,3 +1,11 @@
+# Approach 2
+To reproduce the results of approach 2,
+1. Change "root_dir" variable in simulate.py
+2. Run simulate.py. The data is now stored in the "data" directory.
+3. Run main.py. The model trains and parameters are now saved in checkpoints.
+4. Run inference.py. It loads the model parameters, and execute approach 2.
+5. The squares are stored in errors.txt. Run plot.py to plot them.
+
 # multi-level-vae
 
 This repository contains the code for the paper:  Multi-Level Variational Autoencoder (https://arxiv.org/abs/1705.08841), which was accepted at AAAI-18.
