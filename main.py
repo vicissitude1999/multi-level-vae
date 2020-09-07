@@ -7,7 +7,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--cuda', type=bool, default=True, help="run the following code on a GPU")
 
 parser.add_argument('--batch_size', type=int, default=256, help="batch size for training")
-parser.add_argument('--image_size', type=int, default=28, help="height and width of the image")
+parser.add_argument('--image_size', type=int, default=784, help="height and width of the image")
 parser.add_argument('--num_channels', type=int, default=1, help="number of channels in images")
 
 parser.add_argument('--initial_learning_rate', type=float, default=0.001, help="starting learning rate")

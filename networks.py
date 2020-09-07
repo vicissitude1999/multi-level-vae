@@ -27,7 +27,8 @@ class Encoder(nn.Module):
         self.class_logvar = nn.Linear(in_features=500, out_features=class_dim, bias=True)
 
     def forward(self, x):
-        x = x.view(x.size(0), x.size(1) * x.size(2) * x.size(3))
+        # delete this line when running approach2.py
+        # x = x.view(x.size(0), x.size(1) * x.size(2) * x.size(3))
         x = self.linear_model(x)
 
         style_latent_space_mu = self.style_mu(x)
@@ -55,7 +56,8 @@ class Decoder(nn.Module):
         x = torch.cat((style_latent_space, class_latent_space), dim=1)
 
         x = self.linear_model(x)
-        x = x.view(x.size(0), 1, 28, 28)
+        # delete this line when running approach2.py
+        # x = x.view(x.size(0), 1, 28, 28)
 
         return x
 

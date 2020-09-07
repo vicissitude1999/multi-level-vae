@@ -13,7 +13,7 @@ from utils import weights_init, transform_config
 from networks import Encoder, Decoder
 from torch.utils.data import Dataset, DataLoader
 from utils import imshow_grid, mse_loss, reparameterize, group_wise_reparameterize, accumulate_group_evidence
-from alternate_data_loader import MNIST_Paired, experiment1, experiment3, DoubleUniNormal
+from alternate_data_loader import MNIST_Paired, experiment1, experiment3
 
 def training_procedure(FLAGS):
     """
@@ -33,7 +33,7 @@ def training_procedure(FLAGS):
     """
     variable definition
     """
-    X = torch.FloatTensor(FLAGS.batch_size, 1, FLAGS.image_size, FLAGS.image_size)
+    X = torch.FloatTensor(FLAGS.batch_size, 784)
 
     '''
     add option to run on GPU
@@ -68,19 +68,14 @@ def training_procedure(FLAGS):
             log.write('Epoch\tIteration\tReconstruction_loss\tStyle_KL_divergence_loss\tClass_KL_divergence_loss\n')
 
     # load data set and create data loader instance
-    print('Loading experiment 1 data: ')
-    mnist = experiment3(100, 200)
+    print('Loading experiment data: ')
+    mnist = experiment3(100, 500, 3)
     loader = cycle(DataLoader(mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
 
     '''
     print('Loading MNIST dataset...')
     mnist = datasets.MNIST(root='mnist', download=True, train=True, transform=transform_config)
     loader = cycle(DataLoader(mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
-    '''
-    '''
-    print('Loading time series data...')
-    dataset = DoubleUniNormal('DoubleUniNormal_theta=1_n=1500')
-    loader = cycle(DataLoader(dataset, batch_size=bsize, shuffle=True, drop_last=True))
     '''
 
     # initialize summary writer
@@ -138,7 +133,7 @@ def training_procedure(FLAGS):
 
             auto_encoder_optimizer.step()
 
-            if (iteration + 1) % 50 == 0:
+            if iteration == int(len(mnist) / FLAGS.batch_size) - 1: # last iteration
                 print('')
                 print('Epoch #' + str(epoch))
                 print('Iteration #' + str(iteration))

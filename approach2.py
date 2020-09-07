@@ -16,7 +16,7 @@ import torch.optim as optim
 from utils import transform_config
 from networks import Encoder, Decoder
 from torch.utils.data import DataLoader
-from alternate_data_loader import MNIST_Paired, experiment1, experiment3, DoubleUniNormal
+from alternate_data_loader import MNIST_Paired, experiment1, experiment3
 
 from mpl_toolkits.axes_grid1 import ImageGrid
 
@@ -62,7 +62,8 @@ if __name__ == '__main__':
 
     # load data set and create data loader instance
     print('Loading MNIST paired dataset...')
-    paired_mnist = experiment3(100, 200)
+    paired_mnist = experiment3(50, 500, 3)
+    cps = paired_mnist.cps
     
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
 
@@ -71,55 +72,67 @@ if __name__ == '__main__':
     # test data
     test_data = paired_mnist.sample
     # test_data = torch.from_numpy(paired_mnist.x_test).float()
+    cps_hat = []
 
     for i in range(len(test_data)):
-        if i == 0:
-            print('Running X_'+str(i))
-            # print(paired_mnist.y_test[i])
-            print()
-            X_i = test_data[i]
-            l = X_i.size(1) # value of T (range of timestamps)
+        print('Running X_'+str(i))
+        X_i = test_data[i]
 
-            errors = []
+        errors = {}
 
-            for eta in range(50-20, 50+40):
-                print('\tRunning eta =', eta)
-                g1 = X_i[:, 0:eta].transpose(0, 1)
-                g2 = X_i[:, eta:l].transpose(0, 1)
+        for eta in range(max(1, cps[i]-20), min(cps[i]+20, paired_mnist.T)):
+            g1 = X_i[:, 0:eta].transpose(0, 1)
+            g2 = X_i[:, eta:paired_mnist.T].transpose(0, 1)
 
-                total_error = 0
-                for g in [g1, g2]:
-                    style_mu, _, class_mu, class_logvar = encoder(g)
-                    grouped_mu, _ = accumulate_group_evidence(
-                        class_mu.data, class_logvar.data, torch.zeros(g.size(0), 1), False
-                    )
+            total_error = 0
 
-                    decoder_style_input = torch.tensor(style_mu, requires_grad = True)
-                    decoder_content_input = torch.tensor(grouped_mu[0], requires_grad = True)
+            for g in [g1, g2]:
+                style_mu, _, class_mu, class_logvar = encoder(g)
+                grouped_mu, _ = accumulate_group_evidence(
+                    class_mu.data, class_logvar.data, torch.zeros(g.size(0), 1), False
+                )
 
-                    content = decoder_content_input.expand(g.size(0), decoder_content_input.size(0))
+                decoder_style_input = torch.tensor(style_mu, requires_grad = True)
+                decoder_content_input = torch.tensor(grouped_mu[0], requires_grad = True)
 
-                    print(content.size())
+                content = decoder_content_input.expand(g.size(0), decoder_content_input.size(0))
 
-                    optimizer = optim.Adam(
-                        [decoder_style_input, decoder_content_input]
-                    )
+                optimizer = optim.Adam(
+                    [decoder_style_input, decoder_content_input]
+                )
 
-                    for iterations in range(500):
-                        optimizer.zero_grad()
+                for iterations in range(500):
+                    optimizer.zero_grad()
 
-                        reconstructed = decoder(decoder_style_input, content)
-                        reconstruction_error = torch.sum((reconstructed - g).pow(2))
-                        # print(reconstruction_error)
-                        reconstruction_error.backward(retain_graph = True)
-
-                        optimizer.step()
-                    
+                    reconstructed = decoder(decoder_style_input, content)
+                    reconstruction_error = torch.sum((reconstructed - g).pow(2))
                     # print(reconstruction_error)
-                    total_error += reconstruction_error
-                
-                errors.append(total_error)
+                    reconstruction_error.backward(retain_graph = True)
 
-                with open('errors.txt', 'w') as f:
-                    for e in errors:
-                        f.write("%s\n" % e.item())
+                    optimizer.step()
+                
+                # print(reconstruction_error)
+                total_error += reconstruction_error
+            
+            errors[eta] = total_error.item()
+        
+        cp_hat = min(errors, key=errors.get)
+        cps_hat.append(cp_hat)
+
+        plt.scatter(list(errors.keys()), list(errors.values()), s=0.9)
+        plt.axvline(x=cps[i])
+        plt.axvline(x=cp_hat, color='r')
+        plt.xlabel('etas')
+        plt.ylabel('squared errors')
+        plt.savefig('sqerrors/run-1/' + 'Expt3_n=50_T=500_X' + str(i))
+        plt.close()
+
+    print(cps)
+    print(cps_hat)
+
+
+'''
+            with open('errors.txt', 'w') as f:
+                for e in errors:
+                    f.write("%s\n" % e.item())
+'''
