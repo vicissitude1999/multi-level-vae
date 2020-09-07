@@ -1,3 +1,11 @@
+# approach 2 on MNIST
+1. The dataloaders are in alternate_data_loader.py. There are only experiment1 and experiment3 loaders because experiment2 consumes too much memory, and I think experiment3 and experiment2 have no significant differences.
+2. Change line 72 of training.py for different loaders.
+3. Run training.py.
+4. Delete line 31 and 60 in networks.py in order for approach2.py to work. I should be able to fix this. I know it's annoying.
+5. Run approach2.py. Line 76 sets the i-th test data. Line 85 sets the range of possible change points to consider.
+6. Run plot.py. Line 40 sets the range of possible change points.
+
 # multi-level-vae
 
 This repository contains the code for the paper:  Multi-Level Variational Autoencoder (https://arxiv.org/abs/1705.08841), which was accepted at AAAI-18.
