@@ -106,7 +106,8 @@ class experiment3(Dataset):
             row = torch.cat((part1, part2), dim=1)
             outputs_to_concat.append(row)
 
-            self.labels.append([i1, i2])
+            # i1, i2 if repetitive labels, otherwisse just 2n many
+            self.labels.append([2*i, 2*i+1])
             self.cps.append(cp)
 
         self.sample = torch.stack(outputs_to_concat, dim=0) # get the finally formatted date

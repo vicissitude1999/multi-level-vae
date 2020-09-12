@@ -51,6 +51,8 @@ if __name__ == '__main__':
     decoder = Decoder(style_dim=FLAGS.style_dim, class_dim=FLAGS.class_dim)
     encoder.double()
     decoder.double()
+    # encoder.cuda()
+    # decoder.cuda()
 
     encoder.load_state_dict(
         torch.load(os.path.join('checkpoints', FLAGS.encoder_save), map_location=lambda storage, loc: storage))
@@ -62,7 +64,7 @@ if __name__ == '__main__':
 
     # load data set and create data loader instance
     print('Loading MNIST paired dataset...')
-    paired_mnist = experiment3(50, 500, 3)
+    paired_mnist = experiment3(50, 50, 3)
     cps = paired_mnist.cps
     
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
@@ -94,6 +96,11 @@ if __name__ == '__main__':
 
                 decoder_style_input = torch.tensor(style_mu, requires_grad = True)
                 decoder_content_input = torch.tensor(grouped_mu[0], requires_grad = True)
+                
+                
+                # optimize wrt the above variables
+                decoder_style_input.cuda()
+                decoder_content_input.cuda()
 
                 content = decoder_content_input.expand(g.size(0), decoder_content_input.size(0))
 
@@ -124,7 +131,7 @@ if __name__ == '__main__':
         plt.axvline(x=cp_hat, color='r')
         plt.xlabel('etas')
         plt.ylabel('squared errors')
-        plt.savefig('sqerrors/run-1/' + 'Expt3_n=50_T=500_X' + str(i))
+        plt.savefig('sqerrors/run11set/' + 'Expt3_n=2000_T=50_X' + str(i))
         plt.close()
 
     print(cps)

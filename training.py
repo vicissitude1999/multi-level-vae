@@ -69,7 +69,7 @@ def training_procedure(FLAGS):
 
     # load data set and create data loader instance
     print('Loading experiment data: ')
-    mnist = experiment3(100, 500, 3)
+    mnist = experiment3(500, 50, 3)
     loader = cycle(DataLoader(mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
 
     '''
