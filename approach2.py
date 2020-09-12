@@ -8,7 +8,6 @@ import random
 import pickle
 from torchvision import datasets
 from torch.autograd import Variable
-from alternate_data_loader import MNIST_Paired
 from utils import accumulate_group_evidence, group_wise_reparameterize, reparameterize
 
 import matplotlib.pyplot as plt
@@ -39,8 +38,8 @@ parser.add_argument('--class_dim', type=int, default=10, help="dimension of comm
 parser.add_argument('--encoder_save', type=str, default='encoder', help="model save for encoder")
 parser.add_argument('--decoder_save', type=str, default='decoder', help="model save for decoder")
 
-torch.set_printoptions(precision=8)
 
+torch.set_printoptions(precision=8)
 FLAGS = parser.parse_args()
 
 if __name__ == '__main__':
@@ -61,28 +60,35 @@ if __name__ == '__main__':
 
     if not os.path.exists('reconstructed_images'):
         os.makedirs('reconstructed_images')
+    if not os.path.exists('sqerrors'):
+        os.makedirs('sqerrors')
 
-    # load data set and create data loader instance
-    print('Loading MNIST paired dataset...')
+    # create test data set and create data loader instance
+    print('Creating MNIST paired test dataset...')
     paired_mnist = experiment3(50, 50, 3)
-    cps = paired_mnist.cps
-    
-    loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
-
-    X = torch.FloatTensor(FLAGS.batch_size, 1)
-
-    # test data
     test_data = paired_mnist.sample
-    # test_data = torch.from_numpy(paired_mnist.x_test).float()
+    loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
+    
+    # get the true change points and create list for predicted change points
+    cps = paired_mnist.cps
     cps_hat = []
+    
+    # set up directories. experiment_info is the name of the experiment
+    all_dirs = os.listdir('sqerrors/')
+    max_dir = max([int(d[3:]) for d in all_dirs])
+    new_dir_name = 'run0'+str(max_dir+1) if max_dir <= 8 else 'run'+str(max_dir+1)
+    os.makedirs('sqerrors/'+new_dir_name)
+    experiment_info = 'Expt3_n=500_T=50'
 
-    for i in range(len(test_data)):
+
+    # run on each test sample X_i
+    for i in range(len(test_data)): # Running X_i
         print('Running X_'+str(i))
         X_i = test_data[i]
-
         errors = {}
 
         for eta in range(max(1, cps[i]-20), min(cps[i]+20, paired_mnist.T)):
+            # separate into 2 groups
             g1 = X_i[:, 0:eta].transpose(0, 1)
             g2 = X_i[:, eta:paired_mnist.T].transpose(0, 1)
 
@@ -93,10 +99,11 @@ if __name__ == '__main__':
                 grouped_mu, _ = accumulate_group_evidence(
                     class_mu.data, class_logvar.data, torch.zeros(g.size(0), 1), False
                 )
-
-                decoder_style_input = torch.tensor(style_mu, requires_grad = True)
-                decoder_content_input = torch.tensor(grouped_mu[0], requires_grad = True)
-                
+                # decoder_style_input = torch.tensor(style_mu, requires_grad = True)
+                # decoder_content_input = torch.tensor(grouped_mu[0], requires_grad = True)
+                # above 2 lines incur warnings
+                decoder_style_input = style_mu.clone().detach().requires_grad_(True)
+                decoder_content_input = grouped_mu[0].clone().detach().requires_grad_(True)
                 
                 # optimize wrt the above variables
                 decoder_style_input.cuda()
@@ -113,16 +120,19 @@ if __name__ == '__main__':
 
                     reconstructed = decoder(decoder_style_input, content)
                     reconstruction_error = torch.sum((reconstructed - g).pow(2))
-                    # print(reconstruction_error)
                     reconstruction_error.backward(retain_graph = True)
 
                     optimizer.step()
                 
-                # print(reconstruction_error)
+                # sq error from g1 + sq error from g2
                 total_error += reconstruction_error
             
+            # append the total_error of current splitting
             errors[eta] = total_error.item()
         
+
+        # finished iterating through candidate change points
+        # get the argmin t
         cp_hat = min(errors, key=errors.get)
         cps_hat.append(cp_hat)
 
@@ -131,15 +141,19 @@ if __name__ == '__main__':
         plt.axvline(x=cp_hat, color='r')
         plt.xlabel('etas')
         plt.ylabel('squared errors')
-        plt.savefig('sqerrors/run11set/' + 'Expt3_n=2000_T=50_X' + str(i))
+        plt.savefig(os.path.join('sqerrors', new_dir_name, experiment_info+'_X'+str(i)))
         plt.close()
+    
+
+
+    
+    with open(os.path.join('sqerrors', new_dir_name, experiment_info+'.txt'), 'w') as cps_r:
+        for tmp in cps_hat:
+            cps_r.write('{} '.format(tmp))
+        cps_r.write('\n')
+        for tmp in cps:
+            cps_r.write('{} '.format(tmp))
+
 
     print(cps)
     print(cps_hat)
-
-
-'''
-            with open('errors.txt', 'w') as f:
-                for e in errors:
-                    f.write("%s\n" % e.item())
-'''
