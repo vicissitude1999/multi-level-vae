@@ -38,7 +38,12 @@ parser.add_argument('--class_dim', type=int, default=10, help="dimension of comm
 parser.add_argument('--encoder_save', type=str, default='encoder', help="model save for encoder")
 parser.add_argument('--decoder_save', type=str, default='decoder', help="model save for decoder")
 
-
+# The 2 variables at line 114 and 115 should be moved to GPU.
+# The code works but I'm not sure if it's actually running on GPU.
+# I tested on the GPU of my laptop but it's not faster than CPU.
+# I thought moving encoder and decoder (line 58, 59) to GPU can make things faster.
+# But an error pops up: an illegal memory access was encountered in utils.py
+# It's really confusing why a function in utils.py can cause this error.
 torch.set_printoptions(precision=8)
 FLAGS = parser.parse_args()
 
@@ -65,7 +70,7 @@ if __name__ == '__main__':
 
     # create test data set and create data loader instance
     print('Creating MNIST paired test dataset...')
-    paired_mnist = experiment3(50, 50, 3)
+    paired_mnist = experiment3(10, 50, 3)
     test_data = paired_mnist.sample
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
     
@@ -115,6 +120,7 @@ if __name__ == '__main__':
                     [decoder_style_input, decoder_content_input]
                 )
 
+                # 500 seems enough for 1-d time series
                 for iterations in range(500):
                     optimizer.zero_grad()
 
