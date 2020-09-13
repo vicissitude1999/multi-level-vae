@@ -59,6 +59,9 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
     # decoder_style_input = torch.tensor(style_mu, requires_grad = True)
     # decoder_content_input = torch.tensor(grouped_mu[0], requires_grad = True)
     # above 2 lines incur warnings
+    # decoder_style_input = style_mu.requires_grad_(True)
+    # decoder_content_input = grouped_mu[0].requires_grad_(True)
+
     decoder_style_input = style_mu.clone().detach().requires_grad_(True)
     decoder_content_input = grouped_mu[0].clone().detach().requires_grad_(True)
 
@@ -68,6 +71,9 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
 
     content = decoder_content_input.expand(style_mu.size(0), decoder_content_input.size(0)).double()
 
+    # optimizer = optim.Adam(
+    #     [decoder_style_input, decoder_content_input]
+    # )
     optimizer = optim.Adam(
         [decoder_style_input, decoder_content_input]
     )
@@ -88,8 +94,6 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
 
 def get_eta_error(eta, X, encoder, maxlen):
     # separate into 2 groups
-
-
     g1 = X[:, 0:eta].transpose(0, 1)
     g2 = X[:, eta:maxlen].transpose(0, 1)
 
@@ -109,24 +113,8 @@ if __name__ == '__main__':
     """
     model definitions
     """
-    gpu_ids = []
-    for ii in range(6):
-        try:
-            torch.cuda.get_device_properties(ii)
-            print(str(ii), flush=True)
-            if not gpu_ids:
-                gpu_ids = [ii]
-            else:
-                gpu_ids.append(ii)
-        except AssertionError:
-            print('Not ' + str(ii) + "!", flush=True)
-
-    print(os.getenv('CUDA_VISIBLE_DEVICES'), flush=True)
-    gpu_ids = [int(x) for x in gpu_ids]
     # device management
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    use_dataparallel = len(gpu_ids) > 1
-    print("GPU IDs: " + str([int(x) for x in gpu_ids]), flush=True)
+    device = torch.device('cpu')
 
     encoder = Encoder(style_dim=FLAGS.style_dim, class_dim=FLAGS.class_dim)
     decoder = Decoder(style_dim=FLAGS.style_dim, class_dim=FLAGS.class_dim)
@@ -179,27 +167,40 @@ if __name__ == '__main__':
         os.makedirs(directory_name)
     experiment_info = 'Expt3_n=500_T=50'
 
+    # multiprocessing initializations
+    # leave yourself 1 cpu if you're running on your machine
+    # pool = Pool(processes=os.cpu_count() - 1)
+    # on slurm, don't
+    pool = Pool(processes=os.cpu_count())
 
     # run on each test sample X_i
     for i in range(len(test_data)): # Running X_i
         print('Running X_'+str(i))
         X_i = test_data[i].to(device=device)
-        errors = {}
         time_series = X_i.transpose(0,1)
-        style_mu, _, class_mu, class_logvar = encoder(time_series)
+        # style_mu, _, class_mu, class_logvar = encoder(time_series)
         minimum_eta = max(1, cps[i]-20)
         maximum_eta = min(cps[i]+20, paired_mnist.T)
+        n_etas = maximum_eta - minimum_eta
 
-        # partial is awesome
-        eta_error_calc = partial(get_eta_error, encoder=encoder, X=X_i.detach(), maxlen=paired_mnist.T)
+        # eta_error_calc = partial(get_eta_error, encoder=encoder, X=X_i.detach(), style_mu=style_mu.detach(),
+        #                          class_mu=class_mu.detach(), class_logvar=class_logvar.detach())
 
-        for eta in range(minimum_eta, maximum_eta):
-            total_error = eta_error_calc(eta)
-            errors[eta] = total_error
+        eta_error_calc = partial(get_eta_error, encoder=encoder, X=X_i.detach(), maxlen = paired_mnist.T)
+        errors = {}
+        for ii, error in enumerate(pool.imap_unordered(eta_error_calc, range(minimum_eta, maximum_eta))):
+            errors[ii] = error
+
+        # the non-parallel version
+        # errors = {}
+        # for ii, eta in enumerate(range(minimum_eta, maximum_eta)):
+        #     errors[ii] = eta_error_calc(eta)
+
 
         # finished iterating through candidate change points
         # get the argmin t
         cp_hat = min(errors, key=errors.get)
+        # cp_hat = min(errors)
         cps_hat.append(cp_hat)
 
         plt.scatter(list(errors.keys()), list(errors.values()), s=0.9)
