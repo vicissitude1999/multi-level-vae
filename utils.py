@@ -55,13 +55,15 @@ def accumulate_group_evidence(class_mu, class_logvar, labels_batch, is_cuda=True
         mu_dict[group_label] *= var_dict[group_label]
 
     # replace individual mu and logvar values for each sample with group mu and logvar
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     group_mu = torch.FloatTensor(class_mu.size(0), class_mu.size(1))
     group_var = torch.FloatTensor(class_var.size(0), class_var.size(1))
 
-    if is_cuda:
-        group_mu = group_mu.cuda()
-        group_var = group_var.cuda()
+    #if is_cuda:
+    #    group_mu = group_mu.cuda()
+    #    group_var = group_var.cuda()
 
+    # this is hella slow
     for i in range(len(labels_batch)):
         group_label = labels_batch[i].item()
 
@@ -70,9 +72,12 @@ def accumulate_group_evidence(class_mu, class_logvar, labels_batch, is_cuda=True
 
         # remove 0 from var before taking log
         group_var[i][group_var[i] == float(0)] = 1e-6
-
+    group_mu.requires_grad = True
+    group_var.requires_grad = True
+    group_mu = group_mu.to(device=device)
+    group_logvar = torch.log(group_var.to(device=device))
     # convert group vars into logvars before returning
-    return Variable(group_mu, requires_grad=True), Variable(torch.log(group_var), requires_grad=True)
+    return group_mu, group_logvar
 
 
 def mse_loss(input, target):
