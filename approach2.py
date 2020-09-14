@@ -155,7 +155,7 @@ if __name__ == '__main__':
     random.seed(10)
     torch.random.manual_seed(10)
 
-    paired_mnist = experiment3(10, 50, 3)
+    paired_mnist = experiment3(100, 50, 3)
     test_data = paired_mnist.sample
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
 
@@ -177,7 +177,7 @@ if __name__ == '__main__':
     directory_name = os.path.join(cwd, 'sqerrors', new_dir_name)
     if not os.path.exists(directory_name):
         os.makedirs(directory_name)
-    experiment_info = 'Expt3_n=500_T=50'
+    experiment_info = 'Expt3_n=200_T=50'
 
 
     # run on each test sample X_i
