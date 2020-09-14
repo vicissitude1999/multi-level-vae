@@ -152,10 +152,10 @@ if __name__ == '__main__':
     # create test data set and create data loader instance
     print('Creating MNIST paired test dataset...')
     ## fix random seeds for reproducibility
-    random.seed(10)
-    torch.random.manual_seed(10)
+    random.seed(700)
+    torch.random.manual_seed(700)
 
-    paired_mnist = experiment3(100, 50, 3)
+    paired_mnist = experiment3(15, 50, 3)
     test_data = paired_mnist.sample
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
 
@@ -177,7 +177,15 @@ if __name__ == '__main__':
     directory_name = os.path.join(cwd, 'sqerrors', new_dir_name)
     if not os.path.exists(directory_name):
         os.makedirs(directory_name)
-    experiment_info = 'Expt3_n=200_T=50'
+    experiment_info = 'Expt3_n=500_T=50'
+    # run02: n=200 T=50 seed=10
+    # run03: n=500 T=50 seed=10
+    # run04: n=500 T=50 seed=100
+    # run05: n=500 T=50 no seed
+    
+    # run06: n=500 T=50 seed=700
+    # run07: n=200 T=50 seed=700
+    # run08: n=1000 T=50 seed=700
 
 
     # run on each test sample X_i
