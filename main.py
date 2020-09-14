@@ -22,8 +22,8 @@ parser.add_argument('--reconstruction_coef', type=float, default=1., help="coeff
 parser.add_argument('--kl_divergence_coef', type=float, default=1., help="coefficient for KL-Divergence loss term")
 
 # paths to save models
-parser.add_argument('--encoder_save', type=str, default='encoder', help="model save for encoder")
-parser.add_argument('--decoder_save', type=str, default='decoder', help="model save for decoder")
+parser.add_argument('--encoder_save', type=str, default='encoder1-d', help="model save for encoder")
+parser.add_argument('--decoder_save', type=str, default='decoder1-d', help="model save for decoder")
 
 parser.add_argument('--log_file', type=str, default='log.txt', help="text file to save training logs")
 

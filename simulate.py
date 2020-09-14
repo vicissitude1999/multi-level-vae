@@ -3,7 +3,7 @@ import pandas as pd
 import pickle
 import os
 
-root_dir = '/home/renyi/Documents/mlvae/multi-level-vae/'
+root_dir = '/home/renyi/Documents/multi-level-vae/'
 
 # fixed variance, mean generated differently
 def generate(T, var, theta, n):
