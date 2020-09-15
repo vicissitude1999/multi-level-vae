@@ -155,7 +155,8 @@ if __name__ == '__main__':
     random.seed(700)
     torch.random.manual_seed(700)
 
-    paired_mnist = experiment3(100, 50, 3)
+    T_value = int(FLAGS.encoder_save.split('_')[-1][2:]) # get the T value from flags
+    paired_mnist = experiment3(100, T_value, 3)
     test_data = paired_mnist.sample
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
 
@@ -177,7 +178,7 @@ if __name__ == '__main__':
     directory_name = os.path.join(cwd, 'sqerrors', new_dir_name)
     if not os.path.exists(directory_name):
         os.makedirs(directory_name)
-    experiment_info = 'Expt3_n=500_T=50'
+    experiment_info = FLAGS.encoder_save[8:]
     # run02: n=200 T=50 seed=10
     # run03: n=500 T=50 seed=10
     # run04: n=500 T=50 seed=100
