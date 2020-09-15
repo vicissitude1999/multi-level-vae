@@ -39,7 +39,8 @@ class DoubleUniNormal(Dataset):
         with open(file_name, 'rb') as f:
             dataset = pickle.load(f)
         self.x_train, self.y_train, self.x_test, self.y_test = dataset
-        self.x_test = self.x_test.astype(float)
+        self.T = len(self.x_test[0])
+        # self.x_test = self.x_test.astype(float)
     
     def __len__(self):
         return self.x_train.size
