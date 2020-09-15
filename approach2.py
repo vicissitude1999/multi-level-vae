@@ -73,7 +73,7 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
     )
 
     # 500 seems enough for 1-d time series
-    for iterations in range(500):
+    for iterations in range(200):
         optimizer.zero_grad()
 
         reconstructed = decoder(decoder_style_input, content)
@@ -155,7 +155,7 @@ if __name__ == '__main__':
     random.seed(700)
     torch.random.manual_seed(700)
 
-    paired_mnist = experiment3(15, 50, 3)
+    paired_mnist = experiment3(100, 50, 3)
     test_data = paired_mnist.sample
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
 
@@ -182,7 +182,7 @@ if __name__ == '__main__':
     # run03: n=500 T=50 seed=10
     # run04: n=500 T=50 seed=100
     # run05: n=500 T=50 no seed
-    
+
     # run06: n=500 T=50 seed=700
     # run07: n=200 T=50 seed=700
     # run08: n=1000 T=50 seed=700
