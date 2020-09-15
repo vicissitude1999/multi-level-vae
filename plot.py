@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 
 '''
 log_names = ['log_exp_1.txt', 'log_exp_3_T=200.txt', 'log_exp_3_T=500.txt',
@@ -77,53 +78,66 @@ for i, txt in enumerate(anno):
     
 plt.show()
 plt.close()
-
-
-# n = 1000 T = 50
-[23, 15, 35, 36, 12, 24, 18, 17, 27, 17, 19, 37, 36, 32, 26, 37, 20, 16, 17, 30, 22, 29, 12, 31, 23, 15, 12, 23, 35, 34, 34, 28, 25, 31, 33, 31, 32, 15, 20, 27, 33, 27, 18, 15, 37, 27, 36, 12, 22, 34, 22, 33, 20, 35, 29, 36, 15, 37, 12, 15, 14, 29, 21, 19, 34, 14, 34, 23, 34, 29, 36, 12, 12, 20, 14, 12, 37, 30, 30, 19, 25, 32, 20, 22, 21, 22, 35, 26, 22, 21, 29, 36, 31, 34, 28, 19, 36, 16, 20, 20]
-[41, 15, 34, 35, 13, 24, 18, 17, 26, 17, 19, 40, 35, 32, 26, 40, 17, 12, 17, 30, 24, 29, 12, 30, 24, 21, 10, 21, 39, 35, 34, 29, 25, 25, 33, 40, 32, 15, 19, 25, 32, 28, 18, 16, 38, 27, 47, 12, 22, 28, 22, 33, 20, 35, 29, 35, 21, 37, 11, 16, 14, 17, 21, 22, 31, 31, 36, 23, 32, 29, 36, 20, 12, 17, 11, 18, 37, 29, 30, 19, 25, 33, 15, 22, 21, 22, 34, 21, 22, 21, 26, 33, 32, 32, 35, 19, 36, 14, 20, 20]
-
-# n = 2000 T = 50
-[19, 28, 20, 35, 28, 30, 13, 13, 13, 24, 25, 13, 28, 32, 33, 36, 22, 24, 18, 31, 33, 31, 32, 34, 29, 19, 32, 29, 13, 21, 19, 13, 14, 16, 20, 23, 36, 16, 14, 23, 21, 27, 12, 18, 31, 30, 22, 14, 24, 21, 15, 34, 27, 34, 16, 12, 17, 16, 14, 12, 20, 14, 22, 24, 23, 33, 15, 33, 27, 18, 18, 20, 17, 27, 19, 25, 20, 27, 28, 34, 26, 16, 32, 21, 25, 18, 21, 31, 23, 29, 35, 19, 15, 28, 14, 16, 28, 16, 22, 24]
-[14, 42, 23, 35, 13, 28, 11, 14, 18, 24, 26, 13, 25, 27, 41, 35, 19, 24, 18, 26, 31, 24, 29, 34, 29, 7, 27, 30, 13, 21, 17, 2, 14, 19, 13, 22, 37, 35, 15, 12, 33, 24, 12, 23, 35, 29, 22, 21, 24, 21, 15, 34, 28, 35, 14, 12, 16, 16, 14, 12, 21, 18, 9, 27, 30, 32, 12, 33, 27, 18, 19, 19, 17, 33, 19, 24, 20, 26, 28, 32, 6, 17, 30, 21, 5, 15, 21, 33, 24, 30, 36, 17, 8, 27, 11, 14, 28, 15, 19, 24]
 '''
 
-
-
-n = [2000, 1000, 500, 200, 100]
+n = [100, 200, 500, 1000]
+anno = ['n=100', 'n=200', 'n=500', 'n=1000']
 means = []
 stds = []
 
-for d in [6, 7, 8]:
-    with open('sqerrors/run0' + str(d) + '/Expt3_n=500_T=50.txt') as f:
-        cps_hat = f.readline().split(' ')[0:-1]
+names = {14: 'n=100_T=500',
+15: 'n=200_T=500',
+16: 'n=500_T=500',
+17: 'n=1000_T=500'}
+
+cps = []
+
+for d in names:
+    with open('sqerrors/run' + str(d) + '/' + names[d] + '.txt') as f:
+        f.readline()
         cps = f.readline().split(' ')[0:-1]
-        cps_hat = np.array([int(i) for i in cps_hat])
         cps = np.array([int(i) for i in cps])
+        break
+
+diffs = []
+means = []
+
+for d in names:
+    with open('sqerrors/run'+str(d)+'/'+names[d]+'.txt') as f:
+        cps_hat = f.readline().split(' ')[0:-1]
+        f.readline()
+        cps_hat = np.array([int(i) for i in cps_hat])
+        diff = np.abs(cps_hat - cps)
         
-        mean = np.sum(np.abs(cps_hat - cps)) / len(cps)
-        std = np.std(np.abs(cps_hat - cps))
+        diffs.append(diff)
+        means.append(np.sum(diff) / len(diff))
 
-        means.append(mean)
-        stds.append(std)
+        
+        plt.hist(diff, [0,2,5,10,20], weights=np.ones(len(diff)) / len(diff))
+        plt.gca().yaxis.set_major_formatter(PercentFormatter(1))
+        plt.xlabel('|eta - eta_hat|')
+        plt.ylabel('percentage of test samples')
+        plt.title('histogram for ' + names[d])
+        plt.show()
+        plt.close()
+        
 
-means.append(means[0])
-stds.append(stds[0])
-means.append(means[0])
-stds.append(stds[0])
-print(means)
-print(stds)
-
-plt.scatter(n, means)
-plt.xlabel('n')
-plt.ylabel('average |eta - eta_hat')
-plt.title('average L1 errors (n = 2000,1000,500,200,100  T=50)')
+# plot the average of |eta - eta_hat| across test samples
+plt.scatter(range(len(means)), means)
+for i, txt in enumerate(anno):
+    plt.annotate(txt, (range(len(means))[i], means[i]))
+plt.ylabel('average |eta - eta_hat| across all test samples')
+plt.title('n vs average |eta - eta_hat|')
 plt.show()
 plt.close()
 
-plt.scatter(n, stds)
-plt.xlabel('n')
-plt.ylabel('std of |eta - eta_hat')
-plt.title('stds (n = 2000,1000,500,200,100  T=50)')
+# plot error bars
+avg = np.average(diffs, axis=0)
+std = np.std(diffs, axis=0)
+
+plt.errorbar(range(len(cps)), avg, yerr=std, fmt='o')
+plt.xlabel('test samples X1-X50')
+plt.ylabel('average |eta - eta_hat| across different n values')
+plt.title('n = 1000,500,200,100 T=500')
 plt.show()
 plt.close()

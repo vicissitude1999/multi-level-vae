@@ -27,7 +27,7 @@ print = partial(print, flush=True)
 parser = argparse.ArgumentParser()
 
 # add arguments
-parser.add_argument('--cuda', type=bool, default=False, help="run the following code on a GPU")
+parser.add_argument('--cuda', type=bool, default=True, help="run the following code on a GPU")
 parser.add_argument('--reference_data', type=str, default='fixed', help="generate output using random digits or fixed reference")
 parser.add_argument('--accumulate_evidence', type=str, default=False, help="accumulate class evidence before producing swapped images")
 
@@ -54,7 +54,7 @@ FLAGS = parser.parse_args()
 
 def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
     grouped_mu, _ = accumulate_group_evidence(
-        class_mu.data, class_logvar.data, torch.zeros(style_mu.size(0), 1), False
+        class_mu.data, class_logvar.data, torch.zeros(style_mu.size(0), 1)
     )
     # decoder_style_input = torch.tensor(style_mu, requires_grad = True)
     # decoder_content_input = torch.tensor(grouped_mu[0], requires_grad = True)
@@ -72,8 +72,7 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
         [decoder_style_input, decoder_content_input]
     )
 
-    # 500 seems enough for 1-d time series
-    for iterations in range(200):
+    for iterations in range(50):
         optimizer.zero_grad()
 
         reconstructed = decoder(decoder_style_input, content)
@@ -156,7 +155,7 @@ if __name__ == '__main__':
     torch.random.manual_seed(700)
 
     T_value = int(FLAGS.encoder_save.split('_')[-1][2:]) # get the T value from flags
-    paired_mnist = experiment3(100, T_value, 3)
+    paired_mnist = experiment3(50, T_value, 3)
     test_data = paired_mnist.sample
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
 
