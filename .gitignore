@@ -5,7 +5,6 @@ reconstructed_images/*
 mnist/*
 __pycache__/*
 log.txt
-sqerrors/*
 
 # Davis's gitignore
 

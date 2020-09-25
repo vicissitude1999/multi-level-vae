@@ -72,7 +72,7 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
         [decoder_style_input, decoder_content_input]
     )
 
-    for iterations in range(50):
+    for iterations in range(100):
         optimizer.zero_grad()
 
         reconstructed = decoder(decoder_style_input, content)
@@ -155,7 +155,7 @@ if __name__ == '__main__':
     torch.random.manual_seed(700)
 
     T_value = int(FLAGS.encoder_save.split('_')[-1][2:]) # get the T value from flags
-    paired_mnist = experiment3(50, T_value, 3)
+    paired_mnist = experiment3(100, T_value, 3)
     test_data = paired_mnist.sample
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
 
@@ -169,6 +169,7 @@ if __name__ == '__main__':
     
     # set up directories. experiment_info is the name of the experiment
     all_dirs = os.listdir(os.path.join(cwd, 'sqerrors'))
+    all_dirs = [d for d in all_dirs if d[0:3]=='run']
     try:
         max_dir = max([int(d[3:]) for d in all_dirs])
     except ValueError:

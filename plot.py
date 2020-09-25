@@ -80,15 +80,25 @@ plt.show()
 plt.close()
 '''
 
-n = [100, 200, 500, 1000]
-anno = ['n=100', 'n=200', 'n=500', 'n=1000']
+n = [10, 20, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+anno = ['n=10', 'n=20', 'n=50', 'n=100', 'n=200', 'n=300', 'n=400', 'n=500', 'n=600', 'n=700', 'n=800', 'n=900', 'n=1000']
 means = []
 stds = []
 
-names = {14: 'n=100_T=500',
-15: 'n=200_T=500',
-16: 'n=500_T=500',
-17: 'n=1000_T=500'}
+names = {
+14: 'n=10_T=50',
+15: 'n=20_T=50',
+16: 'n=50_T=50',
+10: 'n=100_T=50',
+11: 'n=200_T=50',
+17: 'n=300_T=50',
+18: 'n=400_T=50',
+12: 'n=500_T=50',
+19: 'n=600_T=50',
+20: 'n=700_T=50',
+21: 'n=800_T=50',
+22: 'n=900_T=50',
+13: 'n=1000_T=50'}
 
 cps = []
 
@@ -101,6 +111,7 @@ for d in names:
 
 diffs = []
 means = []
+stds = []
 
 for d in names:
     with open('sqerrors/run'+str(d)+'/'+names[d]+'.txt') as f:
@@ -111,8 +122,9 @@ for d in names:
         
         diffs.append(diff)
         means.append(np.sum(diff) / len(diff))
+        stds.append(np.std(diff))
 
-        
+        '''
         plt.hist(diff, [0,2,5,10,20], weights=np.ones(len(diff)) / len(diff))
         plt.gca().yaxis.set_major_formatter(PercentFormatter(1))
         plt.xlabel('|eta - eta_hat|')
@@ -120,24 +132,44 @@ for d in names:
         plt.title('histogram for ' + names[d])
         plt.show()
         plt.close()
-        
+        '''
 
 # plot the average of |eta - eta_hat| across test samples
-plt.scatter(range(len(means)), means)
+plt.errorbar(range(len(means)), means, yerr=stds, fmt='o')
 for i, txt in enumerate(anno):
     plt.annotate(txt, (range(len(means))[i], means[i]))
 plt.ylabel('average |eta - eta_hat| across all test samples')
-plt.title('n vs average |eta - eta_hat|')
+plt.title('average |eta - eta_hat| T=50')
 plt.show()
 plt.close()
 
+lower_bound, median, upper_bound = np.percentile(diffs, [20,50,80], axis=1)
+print(lower_bound)
+print(median)
+print(upper_bound)
+
+plt.scatter(range(len(median)), median, c='red')
+plt.scatter(range(len(median)), lower_bound)
+plt.scatter(range(len(median)), upper_bound)
+
+
+for i, txt in enumerate(anno):
+    plt.annotate(txt, (range(len(means))[i], means[i]))
+plt.ylabel('20%,50%,80% |eta - eta_hat| across all test samples')
+plt.title('percentiles of |eta - eta_hat|, T=50')
+plt.show()
+plt.close()
+
+
+'''
 # plot error bars
 avg = np.average(diffs, axis=0)
 std = np.std(diffs, axis=0)
 
 plt.errorbar(range(len(cps)), avg, yerr=std, fmt='o')
-plt.xlabel('test samples X1-X50')
+plt.xlabel('test samples X1-X100')
 plt.ylabel('average |eta - eta_hat| across different n values')
-plt.title('n = 1000,500,200,100 T=500')
+plt.title('n =  T=500')
 plt.show()
 plt.close()
+'''
