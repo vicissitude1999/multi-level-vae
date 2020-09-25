@@ -40,11 +40,18 @@ def training_procedure(FLAGS):
     '''
     add option to run on GPU
     '''
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    encoder.to(device=device)
+    decoder.to(device=device)
+    X = X.to(device=device)
+    
+    '''
     if FLAGS.cuda:
         encoder.cuda()
         decoder.cuda()
 
         X = X.cuda()
+    '''
 
     """
     optimizer definition
@@ -71,7 +78,7 @@ def training_procedure(FLAGS):
 
     # load data set and create data loader instance
     print('Loading time series data...')
-    mnist = DoubleUniNormal('DoubleUniNormal_theta=1_n=1500') # here mnist is just an alias
+    mnist = DoubleUniNormal('Discrete_DoubleUniNormal_theta=1_n=1500') # here mnist is just an alias
     loader = cycle(DataLoader(mnist, batch_size=FLAGS.batch_size, shuffle=True, drop_last=True))
 
     # initialize summary writer

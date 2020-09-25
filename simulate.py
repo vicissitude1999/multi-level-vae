@@ -25,15 +25,36 @@ def generate(T, var, theta, n):
     
     return samples, labels
 
+def generate2(T, var, theta, n):
+    llimit = int(T * 0.1)
+    rlimit = int(T * 0.9)
+    etas = np.array(range(llimit, rlimit+1))
+    samples, labels = [], []
+
+    for i in range(n):
+        eta = np.random.choice(etas, 1)[0]
+        # mean1 is either chosen random uniformly on [0,1] or from a discrate set of values
+        # mean1 = np.random.uniform(0, 1)
+        mean1 = np.random.choice([0,1], 1)[0]
+        if theta == -1:
+            theta = np.random.uniform(0,1)
+        mean2 = mean1 + theta * np.random.choice([-1, 1], 1)[0]
+        sample = np.concatenate((np.random.normal(mean1, var, eta),
+        np.random.normal(mean2, var, T-eta)))
+        samples.append(sample)
+        labels.append(eta)
+    
+    return samples, labels
+
 def generatewrapper(T, var):
     ns = [1500, 10000]
-    thetas = [1, 0.75, 0.5, 0.25, -1]
+    thetas = [1]
     datasets_dict = {}
 
     for theta in thetas:
-        x_test, y_test = generate(T, var, theta, 500)
+        x_test, y_test = generate(T, var, theta, 100)
         for n in ns:
-            name = 'DoubleUniNormal' + '_theta='+str(theta) + '_n='+str(n)
+            name = 'Discrete2_DoubleUniNormal' + '_theta='+str(theta) + '_n='+str(n)
             x_train, y_train = generate(T, var, theta, n)
             datasets_dict[name] = (np.array(x_train), np.array(y_train),
                                     np.array(x_test), np.array(y_test))

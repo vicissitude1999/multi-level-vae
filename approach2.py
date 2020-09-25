@@ -69,7 +69,6 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
         [decoder_style_input, decoder_content_input]
     )
 
-    # 500 seems enough for 1-d time series
     for iterations in range(200):
         optimizer.zero_grad()
 
@@ -143,7 +142,7 @@ if __name__ == '__main__':
         os.makedirs('sqerrors')
 
     print('Loading double uninormal dataset...')
-    paired_mnist = DoubleUniNormal('DoubleUniNormal_theta=1_n=1500')
+    paired_mnist = DoubleUniNormal('Discrete2_DoubleUniNormal_theta=1_n=1500')
     loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
     test_data = torch.from_numpy(paired_mnist.x_test)
 
