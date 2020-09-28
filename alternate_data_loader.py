@@ -1,6 +1,7 @@
 import torch
 import random
 import pickle
+import os
 
 from torchvision import datasets
 from utils import transform_config
@@ -35,7 +36,8 @@ class MNIST_Paired(Dataset):
 
 class DoubleUniNormal(Dataset):
     def __init__(self, dsname):
-        file_name = '/home/renyi/Documents/multi-level-vae/data/original/' + dsname + '.pickle'
+        root_dir = os.getcwd()
+        file_name = os.path.join(root_dir, 'data', dsname)
         with open(file_name, 'rb') as f:
             dataset = pickle.load(f)
         self.x_train, self.y_train, self.x_test, self.y_test = dataset
