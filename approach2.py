@@ -69,7 +69,7 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
         [decoder_style_input, decoder_content_input]
     )
 
-    for iterations in range(200):
+    for iterations in range(100):
         optimizer.zero_grad()
 
         reconstructed = decoder(decoder_style_input, content)
@@ -126,97 +126,101 @@ if __name__ == '__main__':
     encoder.double()
     decoder.double()
 
-
-    cwd = os.getcwd()
-
-    encoder.load_state_dict(
-        torch.load(os.path.join(cwd, 'checkpoints', FLAGS.encoder_save), map_location=lambda storage, loc: storage))
-    decoder.load_state_dict(
-        torch.load(os.path.join(cwd, 'checkpoints', FLAGS.decoder_save), map_location=lambda storage, loc: storage))
-
-    encoder=encoder.to(device=device)
-    decoder=decoder.to(device=device)
     if not os.path.exists('reconstructed_images'):
         os.makedirs('reconstructed_images')
     if not os.path.exists('sqerrors'):
         os.makedirs('sqerrors')
 
-    print('Loading double uninormal dataset...')
-    paired_mnist = DoubleUniNormal('Discrete2_DoubleUniNormal_theta=1_n=1500')
-    loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
-    test_data = torch.from_numpy(paired_mnist.x_test)
+    cwd = os.getcwd()
+    dirs = os.listdir(os.path.join(cwd, 'data'))
+    print('Loading double univariate normal time series test data...')
+
+    for dsname in dirs:
+        params = dsname.split('_')
+        if params[2] in ('theta=10', 'theta=20'):
+            # load saved parameters of encoder and decoder
+            encoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', 'encoder_'+dsname),
+            map_location=lambda storage, loc: storage))
+            decoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', 'decoder_'+dsname),
+            map_location=lambda storage, loc: storage))
+            encoder=encoder.to(device=device)
+            decoder=decoder.to(device=device)
 
 
-    ### Would recommend using this pattern
-    use_gpu = torch.cuda.is_available()
-    
-    # get the true change points and create list for predicted change points
-    cps = paired_mnist.y_test
-    cps_hat = []
-    
-    # set up directories. experiment_info is the name of the experiment
-    all_dirs = os.listdir(os.path.join(cwd, 'sqerrors'))
-    try:
-        max_dir = max([int(d[3:]) for d in all_dirs])
-    except ValueError:
-        max_dir = 0
-    new_dir_name = 'run0'+str(max_dir+1) if max_dir <= 8 else 'run'+str(max_dir+1)
-    directory_name = os.path.join(cwd, 'sqerrors', new_dir_name)
-    if not os.path.exists(directory_name):
-        os.makedirs(directory_name)
-    experiment_info = 'DoubleUniNormal_theta=1_n=1500'
-    # run02: n=200 T=50 seed=10
-    # run03: n=500 T=50 seed=10
-    # run04: n=500 T=50 seed=100
-    # run05: n=500 T=50 no seed
+            paired_mnist = DoubleUniNormal(dsname)
+            loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
+            test_data = torch.from_numpy(paired_mnist.x_test)
 
-    # run06: n=500 T=50 seed=700
-    # run07: n=200 T=50 seed=700
-    # run08: n=1000 T=50 seed=700
+            ### Would recommend using this pattern
+            use_gpu = torch.cuda.is_available()
+            
+            # get the true change points and create list for predicted change points
+            cps = paired_mnist.y_test
+            cps_hat = []
+            
+            # set up directories. experiment_info is the name of the experiment
+            all_dirs = os.listdir(os.path.join(cwd, 'sqerrors'))
+            try:
+                max_dir = max([int(d[3:]) for d in all_dirs])
+            except ValueError:
+                max_dir = 0
+            new_dir_name = 'run0'+str(max_dir+1) if max_dir <= 8 else 'run'+str(max_dir+1)
+            directory_name = os.path.join(cwd, 'sqerrors', new_dir_name)
+            if not os.path.exists(directory_name):
+                os.makedirs(directory_name)
+            experiment_info = dsname
+            # run02: n=200 T=50 seed=10
+            # run03: n=500 T=50 seed=10
+            # run04: n=500 T=50 seed=100
+            # run05: n=500 T=50 no seed
 
-    # run09: double uninormal
+            # run06: n=500 T=50 seed=700
+            # run07: n=200 T=50 seed=700
+            # run08: n=1000 T=50 seed=700
 
-
-    # run on each test sample X_i
-    for i in range(len(test_data)): # Running X_i
-        print('Running X_'+str(i))
-        X_i = test_data[i].to(device=device)
-        
-        errors = {}
-
-        minimum_eta = max(1, cps[i]-20)
-        maximum_eta = min(cps[i]+20, paired_mnist.T)
-
-        # partial is awesome
-        eta_error_calc = partial(get_eta_error, encoder=encoder, X=X_i.detach(), maxlen=paired_mnist.T)
-
-        for eta in range(minimum_eta, maximum_eta):
-            total_error = eta_error_calc(eta)
-            errors[eta] = total_error
-
-        # finished iterating through candidate change points
-        # get the argmin t
-        cp_hat = min(errors, key=errors.get)
-        cps_hat.append(cp_hat)
-
-        plt.scatter(list(errors.keys()), list(errors.values()), s=0.9)
-        plt.axvline(x=cps[i])
-        plt.axvline(x=cp_hat, color='r')
-        plt.xlabel('etas')
-        plt.ylabel('squared errors')
-        plt.savefig(os.path.join('sqerrors', new_dir_name, experiment_info+'_X'+str(i)))
-        plt.close()
-    
+            # run09: double uninormal
 
 
-    
-    with open(os.path.join('sqerrors', new_dir_name, experiment_info+'.txt'), 'w') as cps_r:
-        for tmp in cps_hat:
-            cps_r.write('{} '.format(tmp))
-        cps_r.write('\n')
-        for tmp in cps:
-            cps_r.write('{} '.format(tmp))
+            # run on each test sample X_i
+            for i in range(len(test_data)): # Running X_i
+                print('Running X_'+str(i))
+                X_i = test_data[i].to(device=device)
+                
+                errors = {}
+
+                minimum_eta = max(1, cps[i]-20)
+                maximum_eta = min(cps[i]+20, paired_mnist.T)
+
+                # partial is awesome
+                eta_error_calc = partial(get_eta_error, encoder=encoder, X=X_i.detach(), maxlen=paired_mnist.T)
+
+                for eta in range(minimum_eta, maximum_eta):
+                    total_error = eta_error_calc(eta)
+                    errors[eta] = total_error
+
+                # finished iterating through candidate change points
+                # get the argmin t
+                cp_hat = min(errors, key=errors.get)
+                cps_hat.append(cp_hat)
+
+                plt.scatter(list(errors.keys()), list(errors.values()), s=0.9)
+                plt.axvline(x=cps[i])
+                plt.axvline(x=cp_hat, color='r')
+                plt.xlabel('etas')
+                plt.ylabel('squared errors')
+                plt.savefig(os.path.join('sqerrors', new_dir_name, experiment_info+'_X'+str(i)+'.jpg'))
+                plt.close()
+            
 
 
-    print(cps)
-    print(cps_hat)
+            
+            with open(os.path.join('sqerrors', new_dir_name, experiment_info+'.txt'), 'w') as cps_r:
+                for tmp in cps_hat:
+                    cps_r.write('{} '.format(tmp))
+                cps_r.write('\n')
+                for tmp in cps:
+                    cps_r.write('{} '.format(tmp))
+
+
+            print(cps)
+            print(cps_hat)

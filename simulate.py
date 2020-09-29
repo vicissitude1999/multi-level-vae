@@ -41,10 +41,10 @@ def generate(T, var, theta, n, m1=(0,1), m2=1):
     return samples, labels
 
 def generatewrapper(T, var):
-    thetas = [1, 0.75, 0.5, 0.25, -1]
-    ns = [1500, 10000]
-    mean1s = [(0,1), [0,1,2,3,4,5,6,7,8,9], [0,2,4,6,8]]
-    mean2s = [1, 1, [1,3,5,7,9]]
+    thetas = [10,20]
+    ns = [1500]
+    mean1s = [(0,1), [0,1,2,3,4,5,6,7,8,9]]
+    mean2s = [1, 1]
     datasets_dict = {}
 
     for i in range(len(mean1s)):
@@ -69,7 +69,7 @@ def generatewrapper(T, var):
 if __name__ == "__main__":
     root_dir = os.getcwd()
 
-    dirs = [os.path.join(root_dir, 'data/'), os.path.join(root_dir, 'data/csv/')]
+    dirs = [os.path.join(root_dir, 'data/')]
     for dir in dirs:
         if not os.path.isdir(dir):
             os.mkdir(dir)

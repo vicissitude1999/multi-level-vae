@@ -81,7 +81,7 @@ def training_procedure(FLAGS):
     print('Loading double univariate normal time series data...')
     for dsname in dirs:
         params = dsname.split('_')
-        if params[2] == 'theta=1' and params[3] == 'n=1500':
+        if params[2] in ('theta=10', 'theta=20'):
             print('Running dataset ', dsname)
             ds = DoubleUniNormal(dsname)
             loader = cycle(DataLoader(ds, batch_size=FLAGS.batch_size, shuffle=True, drop_last=True))
@@ -169,7 +169,7 @@ def training_procedure(FLAGS):
 
                 # save checkpoints after every 5 epochs
                 if (epoch + 1) % 10 == 0 or (epoch + 1) == FLAGS.end_epoch:
-                    torch.save(encoder.state_dict(), os.path.join('checkpoints', dsname))
-                    torch.save(decoder.state_dict(), os.path.join('checkpoints', dsname))
+                    torch.save(encoder.state_dict(), os.path.join('checkpoints', 'encoder_'+dsname))
+                    torch.save(decoder.state_dict(), os.path.join('checkpoints', 'decoder_'+dsname))
                 
                 print('Total loss at current epoch: ', total_loss.item())
