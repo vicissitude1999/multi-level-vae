@@ -15,7 +15,7 @@ from utils import weights_init
 from utils import transform_config
 from networks import Encoder, Decoder
 from utils import imshow_grid, mse_loss, reparameterize, group_wise_reparameterize, accumulate_group_evidence
-from alternate_data_loader import DoubleUniNormal
+from alternate_data_loader import DoubleUniNormal, DoubleMulNormal, experiment3
 
 def training_procedure(FLAGS):
     """
@@ -35,24 +35,16 @@ def training_procedure(FLAGS):
     """
     variable definition
     """
-    X = torch.FloatTensor(FLAGS.batch_size, 1)
+    X = torch.FloatTensor(FLAGS.batch_size, 784)
 
     '''
-    add option to run on GPU
+    run on GPU if GPU is available
     '''
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     encoder.to(device=device)
     decoder.to(device=device)
     X = X.to(device=device)
     
-    '''
-    if FLAGS.cuda:
-        encoder.cuda()
-        decoder.cuda()
-
-        X = X.cuda()
-    '''
-
     """
     optimizer definition
     """
@@ -63,7 +55,7 @@ def training_procedure(FLAGS):
     )
 
     """
-    training
+    
     """
     if torch.cuda.is_available() and not FLAGS.cuda:
         print("WARNING: You have a CUDA device, so you should probably run with --cuda")
@@ -78,12 +70,13 @@ def training_procedure(FLAGS):
 
     # load data set and create data loader instance
     dirs = os.listdir(os.path.join(os.getcwd(), 'data'))
-    print('Loading double univariate normal time series data...')
+    print('Loading double multivariate normal time series data...')
     for dsname in dirs:
         params = dsname.split('_')
-        if params[2] in ('theta=10', 'theta=20'):
+        if params[2] in ('theta=-1'):
             print('Running dataset ', dsname)
-            ds = DoubleUniNormal(dsname)
+            ds = DoubleMulNormal(dsname)
+            # ds = experiment3(1000, 50, 3)
             loader = cycle(DataLoader(ds, batch_size=FLAGS.batch_size, shuffle=True, drop_last=True))
 
             # initialize summary writer
@@ -143,7 +136,7 @@ def training_procedure(FLAGS):
 
                     auto_encoder_optimizer.step()
 
-                    if (iteration + 1) % 200 == 0:
+                    if (iteration + 1) % 50 == 0:
                         print('\tIteration #' + str(iteration))
                         print('Reconstruction loss: ' + str(reconstruction_error.data.storage().tolist()[0]))
                         print('Style KL loss: ' + str(style_kl_divergence_loss.data.storage().tolist()[0]))
@@ -167,7 +160,11 @@ def training_procedure(FLAGS):
                     writer.add_scalar('Class KL-Divergence loss', class_kl_divergence_loss.data.storage().tolist()[0],
                                     epoch * (int(len(ds) / FLAGS.batch_size) + 1) + iteration)
 
-                # save checkpoints after every 5 epochs
+                    if epoch == 0 and (iteration+1) % 50 == 0:
+                        torch.save(encoder.state_dict(), os.path.join('checkpoints', 'encoder_'+dsname))
+                        torch.save(decoder.state_dict(), os.path.join('checkpoints', 'decoder_'+dsname))
+
+                # save checkpoints after every 10 epochs
                 if (epoch + 1) % 10 == 0 or (epoch + 1) == FLAGS.end_epoch:
                     torch.save(encoder.state_dict(), os.path.join('checkpoints', 'encoder_'+dsname))
                     torch.save(decoder.state_dict(), os.path.join('checkpoints', 'decoder_'+dsname))

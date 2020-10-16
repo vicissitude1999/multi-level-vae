@@ -15,7 +15,7 @@ import torch.optim as optim
 from utils import transform_config
 from networks import Encoder, Decoder
 from torch.utils.data import DataLoader
-from alternate_data_loader import MNIST_Paired, DoubleUniNormal
+from alternate_data_loader import MNIST_Paired, DoubleUniNormal, DoubleMulNormal
 
 from mpl_toolkits.axes_grid1 import ImageGrid
 
@@ -36,8 +36,8 @@ parser.add_argument('--image_size', type=int, default=28, help="height and width
 parser.add_argument('--num_channels', type=int, default=1, help="number of channels in the images")
 parser.add_argument('--num_classes', type=int, default=10, help="number of classes in the dataset")
 
-parser.add_argument('--style_dim', type=int, default=1, help="dimension of varying factor latent space")
-parser.add_argument('--class_dim', type=int, default=1, help="dimension of common factor latent space")
+parser.add_argument('--style_dim', type=int, default=10, help="dimension of varying factor latent space")
+parser.add_argument('--class_dim', type=int, default=10, help="dimension of common factor latent space")
 
 # paths to save models
 parser.add_argument('--encoder_save', type=str, default='encoder_1_var_reparam', help="model save for encoder")
@@ -69,11 +69,11 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
         [decoder_style_input, decoder_content_input]
     )
 
-    for iterations in range(100):
+    for iterations in range(50):
         optimizer.zero_grad()
 
         reconstructed = decoder(decoder_style_input, content)
-        reconstruction_error = torch.log(torch.sum((reconstructed - encoder_input).pow(2)))
+        reconstruction_error = torch.sum((reconstructed - encoder_input).pow(2))
         reconstruction_error.backward()
 
         optimizer.step()
@@ -82,8 +82,8 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
 
 def get_eta_error(eta, X, encoder, maxlen):
     # separate into 2 groups
-    g1 = X[0: eta].view(eta, -1)
-    g2 = X[eta: maxlen].view(maxlen-eta, -1)
+    g1 = X[:, 0:eta].transpose(0, 1)
+    g2 = X[:, eta:maxlen].transpose(0, 1)
 
     style_mu_bef, _, class_mu_bef, class_logvar_bef = encoder(g1)
     style_mu_aft, _, class_mu_aft, class_logvar_aft = encoder(g2)
@@ -137,7 +137,7 @@ if __name__ == '__main__':
 
     for dsname in dirs:
         params = dsname.split('_')
-        if params[2] in ('theta=10', 'theta=20'):
+        if params[2] in ('theta=-1'):
             # load saved parameters of encoder and decoder
             encoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', 'encoder_'+dsname),
             map_location=lambda storage, loc: storage))
@@ -147,7 +147,7 @@ if __name__ == '__main__':
             decoder=decoder.to(device=device)
 
 
-            paired_mnist = DoubleUniNormal(dsname)
+            paired_mnist = DoubleMulNormal(dsname)
             loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
             test_data = torch.from_numpy(paired_mnist.x_test)
 
@@ -169,16 +169,7 @@ if __name__ == '__main__':
             if not os.path.exists(directory_name):
                 os.makedirs(directory_name)
             experiment_info = dsname
-            # run02: n=200 T=50 seed=10
-            # run03: n=500 T=50 seed=10
-            # run04: n=500 T=50 seed=100
-            # run05: n=500 T=50 no seed
-
-            # run06: n=500 T=50 seed=700
-            # run07: n=200 T=50 seed=700
-            # run08: n=1000 T=50 seed=700
-
-            # run09: double uninormal
+            # 
 
 
             # run on each test sample X_i
@@ -193,7 +184,6 @@ if __name__ == '__main__':
 
                 # partial is awesome
                 eta_error_calc = partial(get_eta_error, encoder=encoder, X=X_i.detach(), maxlen=paired_mnist.T)
-
                 for eta in range(minimum_eta, maximum_eta):
                     total_error = eta_error_calc(eta)
                     errors[eta] = total_error
