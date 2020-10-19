@@ -3,8 +3,10 @@ import random
 import pickle
 import os
 import numpy as np
+from PIL import Image
 
 from torchvision import datasets
+import torchvision.transforms as transforms
 from utils import transform_config
 from torch.utils.data import Dataset
 
@@ -142,3 +144,55 @@ class experiment3(Dataset):
             label = self.labels[d1][1]
 
         return (self.sample[d1, :, d2], label)
+
+class clever_change(Dataset):
+    def __init__(self, transform):
+        self.transform = transform
+        self.data_dim = None
+
+        curr_dir = os.getcwd()
+        images_dict = {}
+        cps_dict = {}
+
+        cnt = 0
+        total_images = len(os.listdir('nsc_images'))
+
+        for filename in os.listdir('nsc_images/'):
+            if cnt % 500 == 0:
+                print(cnt / total_images)
+            cnt += 1
+            _, _, i, t = filename.split('_') # i-th image at time t
+            img_data = np.asarray(Image.open('nsc_images/' + filename))
+            self.data_dim = img_data.shape
+            if filename not in images_dict:
+                images_dict[i] = np.empty((10,) + img_data.shape)
+            else:
+                images_dict[i][int(t)] = img_data
+            if filename not in cps_dict:
+                cps_dict[i] = 0
+            else:
+                cps_dict[i] += 1
+
+        cnt = 0
+        for filename in os.listdir('sc_images/'):
+            if cnt % 500 == 0:
+                print(cnt / total_images)
+            _, _, i, t = filename.split('_')
+            img_data = np.asarray(Image.open('sc_images/' + filename))
+            images_dict[i][int(t)+cps_dict[i]] = img_data # need to adjust the t value
+
+        self.images_dict = images_dict
+        self.cps_dict = cps_dict
+
+    def __len__(self):
+        return 10*len(self.images_dict)
+
+    def __getitem__(self, item):
+        row = item // 10
+        col = item % 10
+        if col < self.cps_dict[row]:
+            label = 2*row
+        else:
+            label = 2*row+1
+
+        return self.transform(self.images_dict[row][col]), label
