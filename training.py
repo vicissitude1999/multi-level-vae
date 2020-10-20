@@ -20,13 +20,13 @@ def training_procedure(FLAGS):
     transform = transforms.Compose([
         transforms.Resize([224, 224]),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
     # load data set and create data loader instance
     print('Loading CLEVER-change data...')
     ds = alternate_data_loader.clever_change(transform)
-    test_split = 0.3 # percentage of test data
+    test_split = 0.01 # percentage of test data
     shuffle = True
     random_seed = 42
 
@@ -38,8 +38,8 @@ def training_procedure(FLAGS):
     train_indices, test_indices = indices[split:], indices[:split]
     train_sampler = SubsetRandomSampler(train_indices)
     # test_sampler = SubsetRandomSampler(test_indices)
-    train_loader = cycle(DataLoader(ds, batch_size=FLAGS.batch_size, shuffle=True, sampler=train_sampler, drop_last=True))
-    # test_loader = cycle(DataLoader(ds, batch_size=FLAGS.batch_size, shuffle=True, sampler=test_sampler, drop_last=True))
+    train_loader = cycle(DataLoader(ds, batch_size=FLAGS.batch_size, sampler=train_sampler, drop_last=True))
+    # test_loader = cycle(DataLoader(ds, batch_size=FLAGS.batch_size, sampler=test_sampler, drop_last=True))
 
 
     # model definition
@@ -61,11 +61,11 @@ def training_procedure(FLAGS):
     )
 
     # variable definition and move to GPU if available
-    X = torch.FloatTensor(FLAGS.batch_size, ds.data_dim)
+    # X = torch.FloatTensor(FLAGS.batch_size, 4, 224, 224)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     encoder.to(device=device)
     decoder.to(device=device)
-    X = X.to(device=device)
+    # X.to(device=device)
 
     # create dirs, log file, etc
     if not os.path.exists('checkpoints'):
@@ -85,7 +85,7 @@ def training_procedure(FLAGS):
 
         # the total loss at each epoch after running iterations of batches
         total_loss = 0
-        num_iterations = int(len(ds)) / FLAGS.batch_size
+        num_iterations = len(ds) // FLAGS.batch_size
 
         for iteration in range(num_iterations):
             # set zero_grad for the optimizer
@@ -93,9 +93,11 @@ def training_procedure(FLAGS):
 
             # load a mini-batch
             image_batch, labels_batch = next(train_loader)
-            X.copy_(image_batch)
+            image_batch = image_batch.to(device=device)
+            labels_batch = labels_batch.to(device=device)
+            #X.copy_(image_batch)
 
-            style_mu, style_logvar, content_mu, content_logvar = encoder(Variable(X))
+            style_mu, style_logvar, content_mu, content_logvar = encoder(image_batch)
             # put all content stuff into group in the grouping/evidence-accumulation stage
             group_mu, group_logvar = accumulate_group_evidence(
                 content_mu.data, content_logvar.data, labels_batch, FLAGS.cuda
@@ -132,7 +134,7 @@ def training_procedure(FLAGS):
 
             reconstruction = decoder(style_z, content_z)
 
-            reconstruction_error = FLAGS.reconstruction_coef * mse_loss(reconstruction, Variable(X))
+            reconstruction_error = FLAGS.reconstruction_coef * mse_loss(reconstruction, image_batch)
             reconstruction_error.backward()
 
             auto_encoder_optimizer.step()

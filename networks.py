@@ -14,10 +14,12 @@ from alternate_data_loader import DoubleUniNormal
 class Encoder(nn.Module):
     def __init__(self, fc_hidden1=1024, fc_hidden2=768, drop_p=0.3, CNN_embed_dim=128):
         super(Encoder, self).__init__()
-        self.fc_hidden1 = fc_hidden1, self.fc_hidden2 = fc_hidden2, self.CNN_embed_dim = CNN_embed_dim
+        self.fc_hidden1, self.fc_hidden2, self.CNN_embed_dim = fc_hidden1, fc_hidden2, CNN_embed_dim
 
         # encoding components
-        resnet = models.resnet152(pretrained=True)
+        resnet = models.resnet18()
+        resnet.conv1 = nn.Conv2d(4, resnet.inplanes, kernel_size=7, stride=2, padding=3,
+                                 bias=False)
         modules = list(resnet.children())
         self.resnet = nn.Sequential(*modules)
         self.fc1 = nn.Linear(resnet.fc.in_features, self.fc_hidden1)
@@ -31,7 +33,7 @@ class Encoder(nn.Module):
         self.fc3_content_logvar = nn.Linear(self.fc_hidden2, self.CNN_embed_dim)
         self.relu = nn.ReLU(inplace=True)
 
-    def encode(self, x):
+    def forward(self, x):
         x = self.resnet(x)
         x = x.view(x.size(0), -1)
         x = self.relu(self.bn1(self.fc1(x)))
@@ -46,7 +48,7 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, fc_hidden1=1024, fc_hidden2=768, drop_p=0.3, CNN_embed_dim=128):
         super(Decoder, self).__init__()
-        self.fc_hidden1 = fc_hidden1, self.fc_hidden2 = fc_hidden2, self.CNN_embed_dim = CNN_embed_dim
+        self.fc_hidden1, self.fc_hidden2, self.CNN_embed_dim = fc_hidden1, fc_hidden2, CNN_embed_dim
 
         # CNN architectures
         self.ch1, self.ch2, self.ch3, self.ch4 = 16, 32, 64, 128

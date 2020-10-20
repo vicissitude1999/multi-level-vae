@@ -122,13 +122,20 @@ def group_wise_reparameterize(training, mu, logvar, labels_batch, cuda):
 def weights_init(layer):
     if isinstance(layer, nn.Conv2d):
         layer.weight.data.normal_(0.0, 0.05)
-        layer.bias.data.zero_()
+        if layer.bias is not None:
+            layer.bias.data.zero_()
     elif isinstance(layer, nn.BatchNorm2d):
         layer.weight.data.normal_(1.0, 0.02)
-        layer.bias.data.zero_()
+        if layer.bias is not None:
+            layer.bias.data.zero_()
+    elif isinstance(layer, nn.BatchNorm1d):
+        layer.weight.data.normal_(1.0, 0.02)
+        if layer.bias is not None:
+            layer.bias.data.zero_()
     elif isinstance(layer, nn.Linear):
         layer.weight.data.normal_(0.0, 0.05)
-        layer.bias.data.zero_()
+        if layer.bias is not None:
+            layer.bias.data.zero_()
 
 
 def imshow_grid(images, shape=[2, 8], name='default', save=False):

@@ -147,52 +147,35 @@ class experiment3(Dataset):
 
 class clever_change(Dataset):
     def __init__(self, transform):
+        dir1 = os.path.join(os.getcwd(), 'nsc_images/')
+        all_filenames = os.listdir(dir1)
         self.transform = transform
-        self.data_dim = None
+        self.data_dim = self.transform(Image.open(dir1 + all_filenames[0])).shape
 
-        curr_dir = os.getcwd()
-        images_dict = {}
         cps_dict = {}
-
-        cnt = 0
-        total_images = len(os.listdir('nsc_images'))
-
-        for filename in os.listdir('nsc_images/'):
-            if cnt % 500 == 0:
-                print(cnt / total_images)
-            cnt += 1
+        for filename in all_filenames:
             _, _, i, t = filename.split('_') # i-th image at time t
-            img_data = np.asarray(Image.open('nsc_images/' + filename))
-            self.data_dim = img_data.shape
-            if filename not in images_dict:
-                images_dict[i] = np.empty((10,) + img_data.shape)
-            else:
-                images_dict[i][int(t)] = img_data
-            if filename not in cps_dict:
-                cps_dict[i] = 0
-            else:
-                cps_dict[i] += 1
+            t = int(t[:-4])
+            i = int(i)
+            cps_dict[i] = cps_dict.get(i, 0) + 1
 
-        cnt = 0
-        for filename in os.listdir('sc_images/'):
-            if cnt % 500 == 0:
-                print(cnt / total_images)
-            _, _, i, t = filename.split('_')
-            img_data = np.asarray(Image.open('sc_images/' + filename))
-            images_dict[i][int(t)+cps_dict[i]] = img_data # need to adjust the t value
-
-        self.images_dict = images_dict
         self.cps_dict = cps_dict
 
     def __len__(self):
-        return 10*len(self.images_dict)
+        return 10*len(self.cps_dict)
 
     def __getitem__(self, item):
-        row = item // 10
-        col = item % 10
-        if col < self.cps_dict[row]:
-            label = 2*row
-        else:
-            label = 2*row+1
+        i, t = item // 10, item % 10
 
-        return self.transform(self.images_dict[row][col]), label
+        if t < self.cps_dict[i]:
+            label = 2*i
+            file_name = 'nsc_images/CLEVR_nonsemantic_'+ str(i).zfill(6)+'_'+\
+                        str(t)+'.png'
+            img = Image.open(file_name)
+        else:
+            label = 2*i+1
+            file_name = 'sc_images/CLEVR_semantic_'+ str(i).zfill(6)+'_'+\
+                        str(t-self.cps_dict[i])+'.png'
+            img = Image.open(file_name)
+
+        return self.transform(img), label
