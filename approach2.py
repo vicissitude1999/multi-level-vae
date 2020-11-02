@@ -15,7 +15,8 @@ import torch.optim as optim
 from utils import transform_config
 from networks import Encoder, Decoder
 from torch.utils.data import DataLoader
-from alternate_data_loader import MNIST_Paired, DoubleUniNormal, DoubleMulNormal
+import alternate_data_loader
+import utils
 
 from mpl_toolkits.axes_grid1 import ImageGrid
 
@@ -40,8 +41,8 @@ parser.add_argument('--style_dim', type=int, default=10, help="dimension of vary
 parser.add_argument('--class_dim', type=int, default=10, help="dimension of common factor latent space")
 
 # paths to save models
-parser.add_argument('--encoder_save', type=str, default='encoder_1_var_reparam', help="model save for encoder")
-parser.add_argument('--decoder_save', type=str, default='decoder_1_var_reparam', help="model save for decoder")
+parser.add_argument('--encoder_save', type=str, default='encoder_clever', help="model save for encoder")
+parser.add_argument('--decoder_save', type=str, default='decoder_clever', help="model save for decoder")
 
 # The 2 variables at line 114 and 115 should be moved to GPU.
 # The code works but I'm not sure if it's actually running on GPU.
@@ -63,7 +64,7 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
     # decoder_style_input.cuda()
     # decoder_content_input.cuda()
 
-    content = decoder_content_input.expand(style_mu.size(0), decoder_content_input.size(0)).double()
+    content = decoder_content_input.expand(style_mu.size(0), decoder_content_input.size(0))
 
     optimizer = optim.Adam(
         [decoder_style_input, decoder_content_input]
@@ -82,14 +83,13 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
 
 def get_eta_error(eta, X, encoder, maxlen):
     # separate into 2 groups
-    g1 = X[:, 0:eta].transpose(0, 1)
-    g2 = X[:, eta:maxlen].transpose(0, 1)
+    g1 = X[0:eta]
+    g2 = X[eta:maxlen]
 
     style_mu_bef, _, class_mu_bef, class_logvar_bef = encoder(g1)
     style_mu_aft, _, class_mu_aft, class_logvar_aft = encoder(g2)
 
     _, bef_reconstruction_error = extract_reconstructions(g1, style_mu_bef, class_mu_bef, class_logvar_bef)
-
     _, aft_reconstruction_error = extract_reconstructions(g2, style_mu_aft, class_mu_aft, class_logvar_aft)
 
     # sq error from g1 + sq error from g2
@@ -99,9 +99,22 @@ def get_eta_error(eta, X, encoder, maxlen):
 
 
 if __name__ == '__main__':
-    """
-    model definitions
-    """
+    # make necessary directories
+    cwd = os.getcwd()
+    if not os.path.exists('reconstructed_images'):
+        os.makedirs('reconstructed_images')
+    if not os.path.exists('sqerrors'):
+        os.makedirs('sqerrors')
+
+    all_dirs = os.listdir(os.path.join(cwd, 'sqerrors'))
+    max_dir = 0
+    if all_dirs:
+        max_dir = max([int(d[3:]) for d in all_dirs])
+    new_dir_name = 'run' + str(max_dir+1).zfill(2)
+    directory_name = os.path.join(cwd, 'sqerrors', new_dir_name)
+    if not os.path.exists(directory_name):
+        os.makedirs(directory_name)
+
     gpu_ids = []
     for ii in range(6):
         try:
@@ -121,96 +134,65 @@ if __name__ == '__main__':
     use_dataparallel = len(gpu_ids) > 1
     print("GPU IDs: " + str([int(x) for x in gpu_ids]), flush=True)
 
-    encoder = Encoder(style_dim=FLAGS.style_dim, class_dim=FLAGS.class_dim)
-    decoder = Decoder(style_dim=FLAGS.style_dim, class_dim=FLAGS.class_dim)
-    encoder.double()
-    decoder.double()
+    # model definition
+    encoder = Encoder()
+    decoder = Decoder()
+    # load saved parameters of encoder and decoder
+    encoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', 'encoder_clever'),
+                                       map_location=lambda storage, loc: storage))
+    decoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', 'decoder_clever'),
+                                       map_location=lambda storage, loc: storage))
+    encoder=encoder.to(device=device)
+    decoder=decoder.to(device=device)
 
-    if not os.path.exists('reconstructed_images'):
-        os.makedirs('reconstructed_images')
-    if not os.path.exists('sqerrors'):
-        os.makedirs('sqerrors')
-
-    cwd = os.getcwd()
-    dirs = os.listdir(os.path.join(cwd, 'data'))
-    print('Loading double univariate normal time series test data...')
-
-    for dsname in dirs:
-        params = dsname.split('_')
-        if params[2] in ('theta=-1'):
-            # load saved parameters of encoder and decoder
-            encoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', 'encoder_'+dsname),
-            map_location=lambda storage, loc: storage))
-            decoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', 'decoder_'+dsname),
-            map_location=lambda storage, loc: storage))
-            encoder=encoder.to(device=device)
-            decoder=decoder.to(device=device)
+    # loading dataset
+    print('Loading CLEVR test data...')
+    ds = alternate_data_loader.clever_change(utils.transform_config2)
+    _, test_indices = utils.subset_sampler(ds, 10, 0.3, True, random_seed=42)
 
 
-            paired_mnist = DoubleMulNormal(dsname)
-            loader = cycle(DataLoader(paired_mnist, batch_size=FLAGS.batch_size, shuffle=True, num_workers=0, drop_last=True))
-            test_data = torch.from_numpy(paired_mnist.x_test)
-
-            ### Would recommend using this pattern
-            use_gpu = torch.cuda.is_available()
-            
-            # get the true change points and create list for predicted change points
-            cps = paired_mnist.y_test
-            cps_hat = []
-            
-            # set up directories. experiment_info is the name of the experiment
-            all_dirs = os.listdir(os.path.join(cwd, 'sqerrors'))
-            try:
-                max_dir = max([int(d[3:]) for d in all_dirs])
-            except ValueError:
-                max_dir = 0
-            new_dir_name = 'run0'+str(max_dir+1) if max_dir <= 8 else 'run'+str(max_dir+1)
-            directory_name = os.path.join(cwd, 'sqerrors', new_dir_name)
-            if not os.path.exists(directory_name):
-                os.makedirs(directory_name)
-            experiment_info = dsname
-            # 
+    # get the true change points and create list for predicted change points
+    cps = ds.cps_dict
+    cps_hat = []
 
 
-            # run on each test sample X_i
-            for i in range(len(test_data)): # Running X_i
-                print('Running X_'+str(i))
-                X_i = test_data[i].to(device=device)
-                
-                errors = {}
+    # run on each test sample X_i
+    for i in test_indices: # Running X_i
+        print('Running X_'+str(i))
+        X = torch.empty(size=(10,) + ds.data_dim)
+        for j in range(10):
+            X[j] = ds[10*i + j][0]
+        X = X.to(device)
 
-                minimum_eta = max(1, cps[i]-20)
-                maximum_eta = min(cps[i]+20, paired_mnist.T)
+        errors = {}
+        minimum_eta = 2
+        maximum_eta = 8
 
-                # partial is awesome
-                eta_error_calc = partial(get_eta_error, encoder=encoder, X=X_i.detach(), maxlen=paired_mnist.T)
-                for eta in range(minimum_eta, maximum_eta):
-                    total_error = eta_error_calc(eta)
-                    errors[eta] = total_error
+        # partial is awesome
+        eta_error_calc = partial(get_eta_error, encoder=encoder, X=X.detach(), maxlen=10)
+        for eta in range(minimum_eta, maximum_eta):
+            total_error = eta_error_calc(eta)
+            errors[eta] = total_error
 
-                # finished iterating through candidate change points
-                # get the argmin t
-                cp_hat = min(errors, key=errors.get)
-                cps_hat.append(cp_hat)
+        # finished iterating through candidate change points
+        # get the argmin t
+        cp_hat = min(errors, key=errors.get)
+        cps_hat.append(cp_hat)
 
-                plt.scatter(list(errors.keys()), list(errors.values()), s=0.9)
-                plt.axvline(x=cps[i])
-                plt.axvline(x=cp_hat, color='r')
-                plt.xlabel('etas')
-                plt.ylabel('squared errors')
-                plt.savefig(os.path.join('sqerrors', new_dir_name, experiment_info+'_X'+str(i)+'.jpg'))
-                plt.close()
-            
-
-
-            
-            with open(os.path.join('sqerrors', new_dir_name, experiment_info+'.txt'), 'w') as cps_r:
-                for tmp in cps_hat:
-                    cps_r.write('{} '.format(tmp))
-                cps_r.write('\n')
-                for tmp in cps:
-                    cps_r.write('{} '.format(tmp))
+        plt.scatter(list(errors.keys()), list(errors.values()), s=0.9)
+        plt.axvline(x=cps[i])
+        plt.axvline(x=cp_hat, color='r')
+        plt.xlabel('etas')
+        plt.ylabel('squared errors')
+        plt.savefig(os.path.join('sqerrors', new_dir_name, 'clevr_X'+str(i)+'.jpg'))
+        plt.close()
 
 
-            print(cps)
-            print(cps_hat)
+
+
+    with open(os.path.join('sqerrors', new_dir_name, 'clevr.txt'), 'w') as cps_r:
+        for tmp in cps_hat:
+            cps_r.write('{} '.format(tmp))
+        cps_r.write('\n')
+        for tmp in cps:
+            cps_r.write('{} '.format(tmp))

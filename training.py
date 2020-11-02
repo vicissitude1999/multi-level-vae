@@ -9,44 +9,27 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 
-from utils import weights_init
-import torchvision.transforms as transforms
 from networks import Encoder, Decoder
-from utils import imshow_grid, mse_loss, reparameterize, group_wise_reparameterize, accumulate_group_evidence
+import utils
+from utils import reparameterize, group_wise_reparameterize, accumulate_group_evidence
 import alternate_data_loader
 
 def training_procedure(FLAGS):
-    # define data transformer
-    transform = transforms.Compose([
-        transforms.Resize([224, 224]),
-        transforms.ToTensor(),
-        # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # load data set and create data loader instance
-    print('Loading CLEVER-change data...')
-    ds = alternate_data_loader.clever_change(transform)
-    test_split = 0.01 # percentage of test data
-    shuffle = True
-    random_seed = 42
-
-    indices = list(range(len(ds)))
-    split = int(np.floor(test_split*len(ds)))
-    if shuffle:
-        np.random.seed(random_seed)
-        np.random.shuffle(indices)
-    train_indices, test_indices = indices[split:], indices[:split]
-    train_sampler = SubsetRandomSampler(train_indices)
-    # test_sampler = SubsetRandomSampler(test_indices)
+    print('Loading CLEVR-change training data...')
+    ds = alternate_data_loader.clever_change(utils.transform_config2)
+    train_sampler, _ = utils.subset_sampler(ds, 10, 0.3, True, random_seed=42)
     train_loader = cycle(DataLoader(ds, batch_size=FLAGS.batch_size, sampler=train_sampler, drop_last=True))
-    # test_loader = cycle(DataLoader(ds, batch_size=FLAGS.batch_size, sampler=test_sampler, drop_last=True))
-
 
     # model definition
     encoder = Encoder()
-    encoder.apply(weights_init)
     decoder = Decoder()
-    decoder.apply(weights_init)
+    # encoder.apply(utils.weights_init)
+    # decoder.apply(utils.weights_init)
+    encoder.to(device=device)
+    decoder.to(device=device)
 
     # load saved models if load_saved flag is true
     if FLAGS.load_saved:
@@ -59,13 +42,6 @@ def training_procedure(FLAGS):
         lr=FLAGS.initial_learning_rate,
         betas=(FLAGS.beta_1, FLAGS.beta_2)
     )
-
-    # variable definition and move to GPU if available
-    # X = torch.FloatTensor(FLAGS.batch_size, 4, 224, 224)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    encoder.to(device=device)
-    decoder.to(device=device)
-    # X.to(device=device)
 
     # create dirs, log file, etc
     if not os.path.exists('checkpoints'):
@@ -85,7 +61,7 @@ def training_procedure(FLAGS):
 
         # the total loss at each epoch after running iterations of batches
         total_loss = 0
-        num_iterations = len(ds) // FLAGS.batch_size
+        num_iterations = int(len(ds)*0.7 // FLAGS.batch_size)
 
         for iteration in range(num_iterations):
             # set zero_grad for the optimizer
@@ -95,7 +71,6 @@ def training_procedure(FLAGS):
             image_batch, labels_batch = next(train_loader)
             image_batch = image_batch.to(device=device)
             labels_batch = labels_batch.to(device=device)
-            #X.copy_(image_batch)
 
             style_mu, style_logvar, content_mu, content_logvar = encoder(image_batch)
             # put all content stuff into group in the grouping/evidence-accumulation stage
@@ -104,21 +79,13 @@ def training_procedure(FLAGS):
             )
 
             # kl-divergence error for style latent space
-            style_kl = FLAGS.kl_divergence_coef * (
-                    - 0.5 * torch.sum(1 + style_logvar - style_mu.pow(2) - style_logvar.exp())
-            )
-            style_kl /= FLAGS.batch_size
-            for i in range(len(ds.data_dim)):
-                style_kl /= ds.data_dim[i]
+            style_kl = -0.5 * torch.sum(1 + style_logvar - style_mu.pow(2) - style_logvar.exp())
+            style_kl /= FLAGS.batch_size * np.prod(ds.data_dim)
             style_kl.backward(retain_graph=True)
 
             # kl-divergence error for content/group latent space
-            content_kl = FLAGS.kl_divergence_coef * (
-                    - 0.5 * torch.sum(1 + group_logvar - group_mu.pow(2) - group_logvar.exp())
-            )
-            style_kl /= FLAGS.batch_size
-            for i in range(len(ds.data_dim)):
-                style_kl /= ds.data_dim[i]
+            content_kl = -0.5 * torch.sum(1 + group_logvar - group_mu.pow(2) - group_logvar.exp())
+            content_kl /= FLAGS.batch_size * np.prod(ds.data_dim)
             content_kl.backward(retain_graph=True)
 
             # reconstruct samples
@@ -134,7 +101,7 @@ def training_procedure(FLAGS):
 
             reconstruction = decoder(style_z, content_z)
 
-            reconstruction_error = FLAGS.reconstruction_coef * mse_loss(reconstruction, image_batch)
+            reconstruction_error = utils.mse_loss(reconstruction, image_batch)
             reconstruction_error.backward()
 
             auto_encoder_optimizer.step()
@@ -142,12 +109,11 @@ def training_procedure(FLAGS):
             total_loss += style_kl + content_kl + reconstruction_error
 
             # print losses
-            if (iteration + 1) % (num_iterations / 5) == 0:
+            if (iteration + 1) % 3 == 0:
                 print('\tIteration #' + str(iteration))
                 print('Reconstruction loss: ' + str(reconstruction_error.data.storage().tolist()[0]))
                 print('Style KL loss: ' + str(style_kl.data.storage().tolist()[0]))
-                print('content KL loss: ' + str(content_kl.data.storage().tolist()[0]))
-                print('Total loss ' + total_loss.item())
+                print('Content KL loss: ' + str(content_kl.data.storage().tolist()[0]))
 
             # write to log
             with open(FLAGS.log_file, 'a') as log:
@@ -167,6 +133,8 @@ def training_procedure(FLAGS):
             writer.add_scalar('content KL-Divergence loss', content_kl.data.storage().tolist()[0],
                             epoch * (int(len(ds) / FLAGS.batch_size) + 1) + iteration)
 
-        # save checkpoints after every epochs
+        print('Total KL loss: ' + str(total_loss.item()))
+
+        # save checkpoints after at every epoch
         torch.save(encoder.state_dict(), os.path.join('checkpoints', 'encoder_clever'))
         torch.save(decoder.state_dict(), os.path.join('checkpoints', 'decoder_clever'))

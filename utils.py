@@ -2,13 +2,27 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from torch.autograd import Variable
-from mpl_toolkits.axes_grid1 import ImageGrid
-from torchvision.transforms import Compose, ToTensor
 
+import torchvision.transforms as transforms
+from torch.utils.data.sampler import SubsetRandomSampler
+
+import numpy as np
 
 # compose a transform configuration
-transform_config = Compose([ToTensor()])
+transform_config = transforms.Compose([
+    transforms.ToTensor()
+])
 
+transform_config1 = transforms.Compose([
+    transforms.Resize([224, 224]),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
+transform_config2 = transforms.Compose([
+    transforms.Resize([64, 64]),
+    transforms.ToTensor()
+])
 
 def accumulate_group_evidence(class_mu, class_logvar, labels_batch, is_cuda=True):
     """
@@ -138,18 +152,16 @@ def weights_init(layer):
             layer.bias.data.zero_()
 
 
-def imshow_grid(images, shape=[2, 8], name='default', save=False):
-    """Plot images in a grid of a given shape."""
-    fig = plt.figure(1)
-    grid = ImageGrid(fig, 111, nrows_ncols=shape, axes_pad=0.05)
+def subset_sampler(ds, T, test_split, shuffle, random_seed):
+    n = len(ds) // T
+    print(n)
+    indices = list(range(n))
+    split = int(np.floor(test_split * n))
+    if shuffle:
+        np.random.seed(random_seed)
+        np.random.shuffle(indices)
+    train_indices, test_indices = indices[split:], indices[:split]
+    train_indices_individuals = [j for i in train_indices for j in range(10*i, 10*i+10)]
+    train_sampler = SubsetRandomSampler(train_indices_individuals)
 
-    size = shape[0] * shape[1]
-    for i in range(size):
-        grid[i].axis('off')
-        grid[i].imshow(images[i])  # The AxesGrid object work as a list of axes.
-
-    if save:
-        plt.savefig('reconstructed_images/' + str(name) + '.png')
-        plt.clf()
-    else:
-        plt.show()
+    return train_sampler, test_indices

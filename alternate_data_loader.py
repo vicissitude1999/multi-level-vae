@@ -5,14 +5,13 @@ import os
 import numpy as np
 from PIL import Image
 
+import utils
 from torchvision import datasets
-import torchvision.transforms as transforms
-from utils import transform_config
 from torch.utils.data import Dataset
 
 
 class MNIST_Paired(Dataset):
-    def __init__(self, root='mnist', download=True, train=True, transform=transform_config):
+    def __init__(self, root='mnist', download=True, train=True, transform=utils.transform_config):
         self.mnist = datasets.MNIST(root=root, download=download, train=train, transform=transform)
 
         self.data_dict = {}
@@ -94,7 +93,7 @@ class experiment3(Dataset):
     def __init__(self, n, T, cp_way):
         self.n = n
         self.T = int(T)
-        self.mnist = datasets.MNIST(root='mnist', download=True, train=True, transform=transform_config)
+        self.mnist = datasets.MNIST(root='mnist', download=True, train=True, transform=utils.transform_config)
         self.mnist.data = np.true_divide(self.mnist.data, 255)
         self.labels = []
         self.cps = []
@@ -150,7 +149,8 @@ class clever_change(Dataset):
         dir1 = os.path.join(os.getcwd(), 'nsc_images/')
         all_filenames = os.listdir(dir1)
         self.transform = transform
-        self.data_dim = self.transform(Image.open(dir1 + all_filenames[0])).shape
+        image_1 = Image.open(dir1 + all_filenames[0]).convert('RGB')
+        self.data_dim = self.transform(image_1).shape
 
         cps_dict = {}
         for filename in all_filenames:
@@ -169,13 +169,13 @@ class clever_change(Dataset):
 
         if t < self.cps_dict[i]:
             label = 2*i
-            file_name = 'nsc_images/CLEVR_nonsemantic_'+ str(i).zfill(6)+'_'+\
+            file_name = 'nsc_images/CLEVR_nonsemantic_'+ str(i).zfill(6)+'_'+ \
                         str(t)+'.png'
-            img = Image.open(file_name)
+            img = Image.open(file_name).convert('RGB')
         else:
             label = 2*i+1
-            file_name = 'sc_images/CLEVR_semantic_'+ str(i).zfill(6)+'_'+\
+            file_name = 'sc_images/CLEVR_semantic_'+ str(i).zfill(6)+'_'+ \
                         str(t-self.cps_dict[i])+'.png'
-            img = Image.open(file_name)
+            img = Image.open(file_name).convert('RGB')
 
         return self.transform(img), label
