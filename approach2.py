@@ -6,6 +6,7 @@ from itertools import cycle
 import torch
 import random
 import pickle
+from torchvision.utils import save_image
 from torchvision import datasets
 from torch.autograd import Variable
 from utils import accumulate_group_evidence, group_wise_reparameterize, reparameterize
@@ -13,7 +14,7 @@ from utils import accumulate_group_evidence, group_wise_reparameterize, reparame
 import matplotlib.pyplot as plt
 import torch.optim as optim
 from utils import transform_config
-from networks import Encoder, Decoder
+from networks1 import Encoder, Decoder
 from torch.utils.data import DataLoader
 import alternate_data_loader
 import utils
@@ -44,12 +45,6 @@ parser.add_argument('--class_dim', type=int, default=10, help="dimension of comm
 parser.add_argument('--encoder_save', type=str, default='encoder_clever', help="model save for encoder")
 parser.add_argument('--decoder_save', type=str, default='decoder_clever', help="model save for decoder")
 
-# The 2 variables at line 114 and 115 should be moved to GPU.
-# The code works but I'm not sure if it's actually running on GPU.
-# I tested on the GPU of my laptop but it's not faster than CPU.
-# I thought moving encoder and decoder (line 58, 59) to GPU can make things faster.
-# But an error pops up: an illegal memory access was encountered in utils.py
-# It's really confusing why a function in utils.py can cause this error.
 torch.set_printoptions(precision=8)
 FLAGS = parser.parse_args()
 
@@ -81,7 +76,7 @@ def extract_reconstructions(encoder_input, style_mu, class_mu, class_logvar):
 
     return reconstructed, reconstruction_error
 
-def get_eta_error(eta, X, encoder, maxlen):
+def get_eta_error(i, eta, X, encoder, maxlen):
     # separate into 2 groups
     g1 = X[0:eta]
     g2 = X[eta:maxlen]
@@ -89,8 +84,18 @@ def get_eta_error(eta, X, encoder, maxlen):
     style_mu_bef, _, class_mu_bef, class_logvar_bef = encoder(g1)
     style_mu_aft, _, class_mu_aft, class_logvar_aft = encoder(g2)
 
-    _, bef_reconstruction_error = extract_reconstructions(g1, style_mu_bef, class_mu_bef, class_logvar_bef)
-    _, aft_reconstruction_error = extract_reconstructions(g2, style_mu_aft, class_mu_aft, class_logvar_aft)
+    g1_reconstructions, bef_reconstruction_error = extract_reconstructions(g1, style_mu_bef, class_mu_bef, class_logvar_bef)
+    g2_reconstructions, aft_reconstruction_error = extract_reconstructions(g2, style_mu_aft, class_mu_aft, class_logvar_aft)
+
+    dir_path = os.path.join('reconstructed_images', 'X_'+str(i), 'eta='+str(eta))
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+
+    # plot the reconstructions
+    for k in range(eta):
+        save_image(g1_reconstructions[k], dir_path+'/'+str(k)+'.png')
+    for k in range(maxlen-eta):
+        save_image(g2_reconstructions[k], dir_path+'/'+str(k+eta)+'.png')
 
     # sq error from g1 + sq error from g2
     total_error = bef_reconstruction_error + aft_reconstruction_error
@@ -138,16 +143,16 @@ if __name__ == '__main__':
     encoder = Encoder()
     decoder = Decoder()
     # load saved parameters of encoder and decoder
-    encoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', 'encoder_clever'),
+    encoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', FLAGS.encoder_save),
                                        map_location=lambda storage, loc: storage))
-    decoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', 'decoder_clever'),
+    decoder.load_state_dict(torch.load(os.path.join(cwd, 'checkpoints', FLAGS.decoder_save),
                                        map_location=lambda storage, loc: storage))
     encoder=encoder.to(device=device)
     decoder=decoder.to(device=device)
 
     # loading dataset
     print('Loading CLEVR test data...')
-    ds = alternate_data_loader.clever_change(utils.transform_config2)
+    ds = alternate_data_loader.clever_change(utils.transform_config1)
     _, test_indices = utils.subset_sampler(ds, 10, 0.3, True, random_seed=42)
 
 
@@ -159,6 +164,8 @@ if __name__ == '__main__':
     # run on each test sample X_i
     for i in test_indices: # Running X_i
         print('Running X_'+str(i))
+        if not os.path.exists('reconstructed_images/X_'+str(i)):
+            os.makedirs('reconstructed_images/X_'+str(i))
         X = torch.empty(size=(10,) + ds.data_dim)
         for j in range(10):
             X[j] = ds[10*i + j][0]
@@ -169,9 +176,9 @@ if __name__ == '__main__':
         maximum_eta = 8
 
         # partial is awesome
-        eta_error_calc = partial(get_eta_error, encoder=encoder, X=X.detach(), maxlen=10)
-        for eta in range(minimum_eta, maximum_eta):
-            total_error = eta_error_calc(eta)
+        # eta_error_calc = partial(get_eta_error, i=i, encoder=encoder, X=X.detach(), maxlen=10)
+        for eta in range(minimum_eta, maximum_eta+1):
+            total_error = get_eta_error(i, eta, X.detach(), encoder, maxlen=10)
             errors[eta] = total_error
 
         # finished iterating through candidate change points

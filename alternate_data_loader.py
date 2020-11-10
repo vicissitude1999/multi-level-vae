@@ -45,7 +45,7 @@ class DoubleUniNormal(Dataset):
         self.x_train, self.y_train, self.x_test, self.y_test = dataset
         self.T = len(self.x_test[0])
         # self.x_test = self.x_test.astype(float)
-    
+
     def __len__(self):
         return self.x_train.size
 
@@ -58,7 +58,7 @@ class DoubleUniNormal(Dataset):
             label = 2*row
         else:
             label = 2*row + 1
-        
+
         return (self.x_train[row, column].reshape(1), label)
 
 
@@ -70,7 +70,7 @@ class DoubleMulNormal(Dataset):
             dataset = pickle.load(f)
         self.x_train, self.y_train, self.x_test, self.y_test = dataset
         self.T = self.x_train.shape[2]
-    
+
     def __len__(self):
         n, d, T = self.x_train.shape
         return n*T
@@ -84,7 +84,7 @@ class DoubleMulNormal(Dataset):
             label = 2*row
         else:
             label = 2*row + 1
-        
+
         # print(self.x_train[row, : , column].shape)
         return (self.x_train[row, : ,column], label)
 
@@ -107,7 +107,7 @@ class experiment3(Dataset):
             possible_cps = [T//2, T//3, T//4]
         elif cp_way == 3: # interval of cp values
             possible_cps = list(range(T//4, 3*T//4+1, 1))
-        
+
         for i in range(n):
             i1, i2 = random.sample(range(10), 2) # sample 2 digits
             cp = random.sample(possible_cps, 1)[0] # sample change point
@@ -121,7 +121,7 @@ class experiment3(Dataset):
             idx2 = random.sample(range(data2.size(0)), T-cp)
             part2 = data2.view(data2.size(0), -1)[idx2]
             part2 = torch.transpose(part2, 0, 1)
-        
+
             row = torch.cat((part1, part2), dim=1)
             outputs_to_concat.append(row)
 
@@ -133,7 +133,7 @@ class experiment3(Dataset):
 
     def __len__(self):
         return self.n*self.T
-    
+
     def __getitem__(self, idx):
         d1 = idx // self.T
         d2 = idx % self.T

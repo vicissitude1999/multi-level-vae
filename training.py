@@ -9,7 +9,7 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 
-from networks import Encoder, Decoder
+from networks1 import Encoder, Decoder
 import utils
 from utils import reparameterize, group_wise_reparameterize, accumulate_group_evidence
 import alternate_data_loader
@@ -19,7 +19,7 @@ def training_procedure(FLAGS):
 
     # load data set and create data loader instance
     print('Loading CLEVR-change training data...')
-    ds = alternate_data_loader.clever_change(utils.transform_config2)
+    ds = alternate_data_loader.clever_change(utils.transform_config1)
     train_sampler, _ = utils.subset_sampler(ds, 10, 0.3, True, random_seed=42)
     train_loader = cycle(DataLoader(ds, batch_size=FLAGS.batch_size, sampler=train_sampler, drop_last=True))
 
