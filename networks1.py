@@ -8,176 +8,218 @@ import torchvision.models as models
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
+import utils
 from utils import transform_config, reparameterize
-from alternate_data_loader import DoubleUniNormal
 
-class Encoder(nn.Module):
-    def __init__(self, fc_hidden1=1024, fc_hidden2=768, drop_p=0.3, CNN_embed_dim=128):
-        super(Encoder, self).__init__()
-        self.fc_hidden1, self.fc_hidden2, self.CNN_embed_dim = fc_hidden1, fc_hidden2, CNN_embed_dim
+class DFCVAE(nn.Module):
+    def __init__(self, z_dim=128, hidden_dims = None, alpha=1.0, beta=0.5):
+        super(DFCVAE, self).__init__()
+        self.z_dim = z_dim
+        self.alpha = alpha
+        self.beta = beta
 
-        # encoding components
-        resnet = models.resnet18(pretrained=True)
-        modules = list(resnet.children())[:-1]
-        self.resnet = nn.Sequential(*modules)
-        self.fc1 = nn.Linear(resnet.fc.in_features, self.fc_hidden1)
-        self.bn1 = nn.BatchNorm1d(self.fc_hidden1, momentum=0.01)
-        self.fc2 = nn.Linear(self.fc_hidden1, self.fc_hidden2)
-        self.bn2 = nn.BatchNorm1d(self.fc_hidden2, momentum=0.01)
-        # latent class mu and sigma
-        self.fc3_style_mu = nn.Linear(self.fc_hidden2, self.CNN_embed_dim)
-        self.fc3_style_logvar = nn.Linear(self.fc_hidden2, self.CNN_embed_dim)
-        self.fc3_content_mu = nn.Linear(self.fc_hidden2,self.CNN_embed_dim)
-        self.fc3_content_logvar = nn.Linear(self.fc_hidden2, self.CNN_embed_dim)
-        self.relu = nn.ReLU(inplace=True)
+        modules = []
+        if hidden_dims is None:
+            hidden_dims = [32, 64, 128, 256, 512]
 
-    def forward(self, x):
-        x = self.resnet(x)
-        x = x.view(x.size(0), -1)
-        x = self.relu(self.bn1(self.fc1(x)))
-        x = self.relu(self.bn2(self.fc2(x)))
+                # Build Encoder
+        in_channels = 3
+        for h_dim in hidden_dims:
+            modules.append(
+                nn.Sequential(
+                    nn.Conv2d(in_channels, out_channels=h_dim,
+                              kernel_size= 3, stride= 2, padding  = 1),
+                    nn.BatchNorm2d(h_dim),
+                    nn.LeakyReLU())
+            )
+            in_channels = h_dim
 
-        style_mu, style_logvar = self.fc3_style_mu(x), self.fc3_style_logvar(x)
-        content_mu, content_logvar = self.fc3_content_mu(x), self.fc3_content_logvar(x)
+        self.encoder = nn.Sequential(*modules)
+        self.fc_style_mu = nn.Linear(hidden_dims[-1]*4, z_dim)
+        self.fc_style_var = nn.Linear(hidden_dims[-1]*4, z_dim)
+        self.fc_content_mu = nn.Linear(hidden_dims[-1]*4, z_dim)
+        self.fc_content_var = nn.Linear(hidden_dims[-1]*4, z_dim)
+
+
+        # Build Decoder
+        modules = []
+
+        self.decoder_input = nn.Linear(2*z_dim, hidden_dims[-1] * 4)
+
+        hidden_dims.reverse()
+
+        for i in range(len(hidden_dims) - 1):
+            modules.append(
+                nn.Sequential(
+                    nn.ConvTranspose2d(hidden_dims[i],
+                                       hidden_dims[i + 1],
+                                       kernel_size=3,
+                                       stride = 2,
+                                       padding=1,
+                                       output_padding=1),
+                    nn.BatchNorm2d(hidden_dims[i + 1]),
+                    nn.LeakyReLU())
+            )
+
+
+
+        self.decoder = nn.Sequential(*modules)
+
+        self.final_layer = nn.Sequential(
+                            nn.ConvTranspose2d(hidden_dims[-1],
+                                               hidden_dims[-1],
+                                               kernel_size=3,
+                                               stride=2,
+                                               padding=1,
+                                               output_padding=1),
+                            nn.BatchNorm2d(hidden_dims[-1]),
+                            nn.LeakyReLU(),
+                            nn.Conv2d(hidden_dims[-1], out_channels= 3,
+                                      kernel_size= 3, padding= 1),
+                            nn.Tanh())
+
+        self.feature_network = models.vgg19_bn(pretrained=True)
+
+        # Freeze the pretrained feature network
+        for param in self.feature_network.parameters():
+            param.requires_grad = False
+
+        self.feature_network.eval()
+    
+    def encode(self, x):
+        x = self.encoder(x)
+        x = torch.flatten(x, start_dim=1)
+
+        style_mu, style_logvar = self.fc_style_mu(x), self.fc_style_var(x)
+        content_mu, content_logvar = self.fc_content_mu(x), self.fc_content_var(x)
 
         return style_mu, style_logvar, content_mu, content_logvar
+    
+    def decode(self, style_z, content_z):
+        x = torch.cat((style_z, content_z), dim=1)
+        x = self.decoder_input(x)
+        x = x.view(-1, 512, 2, 2)
+        x = self.decoder(x)
+        x = self.final_layer(x)
+
+        return x
+    
+    def extract_features(self, input, feature_layers = None):
+        """
+        Extracts the features from the pretrained model
+        at the layers indicated by feature_layers.
+        :param input: (Tensor) [B x C x H x W]
+        :param feature_layers: List of string of IDs
+        :return: List of the extracted features
+        """
+        if feature_layers is None:
+            feature_layers = ['14', '24', '34', '43']
+        features = []
+        result = input
+        for (key, module) in self.feature_network.features._modules.items():
+            result = module(result)
+            if(key in feature_layers):
+                features.append(result)
+
+        return features
 
 
-class Decoder(nn.Module):
-    def __init__(self, fc_hidden1=1024, fc_hidden2=768, drop_p=0.3, CNN_embed_dim=128):
-        super(Decoder, self).__init__()
-        self.fc_hidden1, self.fc_hidden2, self.CNN_embed_dim = fc_hidden1, fc_hidden2, CNN_embed_dim
+class resnetVAE(nn.Module):
+    def __init__(self, fc_hidden1=1024, fc_hidden2=768, drop_p=0.3, z_dim=128):
+        super(resnetVAE, self).__init__()
+        self.fc_hidden1, self.fc_hidden2, self.z_dim = fc_hidden1, fc_hidden2, z_dim
 
-        # CNN architectures
-        self.ch1, self.ch2, self.ch3, self.ch4 = 16, 32, 64, 128
-        self.k1, self.k2, self.k3, self.k4 = (5, 5), (3, 3), (3, 3), (3, 3)      # 2d kernal size
-        self.s1, self.s2, self.s3, self.s4 = (2, 2), (2, 2), (2, 2), (2, 2)      # 2d strides
-        self.pd1, self.pd2, self.pd3, self.pd4 = (0, 0), (0, 0), (0, 0), (0, 0)  # 2d padding
+        # encoding components
+        resnet = models.resnet50(pretrained=True)
+        modules = list(resnet.children())[:-1]
+        self.resnet = nn.Sequential(*modules)
+        self.block1 = nn.Sequential(
+            nn.Linear(resnet.fc.in_features, self.fc_hidden1),
+            nn.BatchNorm1d(self.fc_hidden1, momentum=0.01),
+            nn.ReLU(inplace=True)
+        )
+        self.block2 = nn.Sequential(
+            nn.Linear(self.fc_hidden1, self.fc_hidden2),
+            nn.BatchNorm1d(self.fc_hidden2, momentum=0.01),
+            nn.ReLU(inplace=True)
+        )
+        # latent class mu and sigma
+        self.style_mu = nn.Linear(self.fc_hidden2, self.z_dim)
+        self.style_logvar = nn.Linear(self.fc_hidden2, self.z_dim)
+        self.content_mu = nn.Linear(self.fc_hidden2,self.z_dim)
+        self.content_logvar = nn.Linear(self.fc_hidden2, self.z_dim)
 
-        self.fc4 = nn.Linear(2*self.CNN_embed_dim, self.fc_hidden2)
-        self.bn4 = nn.BatchNorm1d(self.fc_hidden2)
-        self.fc5 = nn.Linear(self.fc_hidden2, 64 * 4 * 4)
-        self.bn5 = nn.BatchNorm1d(64 * 4 * 4)
-        self.relu = nn.ReLU(inplace=True)
+        # decoding components
+        self.block3 = nn.Sequential(
+            nn.Linear(2*self.z_dim, self.fc_hidden2),
+            nn.BatchNorm1d(self.fc_hidden2),
+            nn.ReLU(inplace=True)
+        )
+        self.block4 = nn.Sequential(
+            nn.Linear(self.fc_hidden2, 64*4*4),
+            nn.BatchNorm1d(64*4*4),
+            nn.ReLU(inplace=True)
+        )
 
-        self.convTrans6 = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=self.k4, stride=self.s4,
-                               padding=self.pd4),
+        self.convTrans5 = nn.Sequential(
+            nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3, stride=2, padding=0),
             nn.BatchNorm2d(32, momentum=0.01),
             nn.ReLU(inplace=True)
         )
-        self.convTrans7 = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=32, out_channels=8, kernel_size=self.k3, stride=self.s3,
-                               padding=self.pd3),
+        self.convTrans6 = nn.Sequential(
+            nn.ConvTranspose2d(in_channels=32, out_channels=8, kernel_size=3, stride=2, padding=0),
             nn.BatchNorm2d(8, momentum=0.01),
             nn.ReLU(inplace=True)
         )
-        self.convTrans8 = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=8, out_channels=3, kernel_size=self.k2, stride=self.s2,
-                               padding=self.pd2),
+        self.convTrans7 = nn.Sequential(
+            nn.ConvTranspose2d(in_channels=8, out_channels=3, kernel_size=3, stride=2, padding=0),
             nn.BatchNorm2d(3, momentum=0.01),
-            nn.Sigmoid()    # y = (y1, y2, y3) \in [0 ,1]^3
+            nn.Sigmoid()   # restrict the range to (0,1) because input image are RBG colors in (0,1)
         )
 
-    def forward(self, style_z, content_z):
-        x = torch.cat((style_z, content_z), dim=1)
-        x = self.relu(self.bn4(self.fc4(x)))
-        x = self.relu(self.bn5(self.fc5(x))).view(-1, 64, 4, 4)
-        x = self.convTrans6(x)
-        x = self.convTrans7(x)
-        x = self.convTrans8(x)
-        x = nn.functional.interpolate(x, size=(224, 224), mode='bilinear')
+        self.feature_network = models.vgg19_bn(pretrained=True)
 
-        return x
+        # Freeze the pretrained feature network
+        for param in self.feature_network.parameters():
+            param.requires_grad = False
 
-'''
-import torch
-import torch.nn as nn
-from collections import OrderedDict
+        self.feature_network.eval()
+    
+    def encode(self, x):
+        with torch.no_grad():
+            x = self.resnet(x)
+        x = torch.flatten(x, start_dim=1)
+        x = self.block2(self.block1(x))
 
-from itertools import cycle
-from torchvision import datasets
-import torchvision.models as models
-from torch.autograd import Variable
-from torch.utils.data import DataLoader
-
-from utils import transform_config, reparameterize
-from alternate_data_loader import DoubleUniNormal
-
-class Encoder(nn.Module):
-    def __init__(self, fc_hidden1=512, fc_hidden2=768, drop_p=0.3, CNN_embed_dim=64):
-        super(Encoder, self).__init__()
-        self.fc_hidden1, self.fc_hidden2, self.CNN_embed_dim = fc_hidden1, fc_hidden2, CNN_embed_dim
-
-        # encoding components
-        resnet = models.resnet18(pretrained=True)
-        modules = list(resnet.children())[:-1]
-        self.resnet = nn.Sequential(*modules)
-        self.fc1 = nn.Linear(resnet.fc.in_features, self.fc_hidden1)
-        self.bn1 = nn.BatchNorm1d(self.fc_hidden1, momentum=0.01)
-
-        # latent class mu and sigma
-        self.fc3_style_mu = nn.Linear(self.fc_hidden1, self.CNN_embed_dim)
-        self.fc3_style_logvar = nn.Linear(self.fc_hidden1, self.CNN_embed_dim)
-        self.fc3_content_mu = nn.Linear(self.fc_hidden1,self.CNN_embed_dim)
-        self.fc3_content_logvar = nn.Linear(self.fc_hidden1, self.CNN_embed_dim)
-        self.relu = nn.ReLU(inplace=True)
-
-    def forward(self, x):
-        x = self.resnet(x)
-        x = x.view(x.size(0), -1)
-        x = self.relu(self.bn1(self.fc1(x)))
-
-        style_mu, style_logvar = self.fc3_style_mu(x), self.fc3_style_logvar(x)
-        content_mu, content_logvar = self.fc3_content_mu(x), self.fc3_content_logvar(x)
+        style_mu, style_logvar = self.style_mu(x), self.style_logvar(x)
+        content_mu, content_logvar = self.content_mu(x), self.content_logvar(x)
 
         return style_mu, style_logvar, content_mu, content_logvar
-
-
-class Decoder(nn.Module):
-    def __init__(self, fc_hidden1=512, fc_hidden2=768, drop_p=0.3, CNN_embed_dim=64):
-        super(Decoder, self).__init__()
-        self.fc_hidden1, self.fc_hidden2, self.CNN_embed_dim = fc_hidden1, fc_hidden2, CNN_embed_dim
-
-        # CNN architectures
-        self.ch1, self.ch2, self.ch3, self.ch4 = 16, 32, 64, 128
-        self.k1, self.k2, self.k3, self.k4 = (5, 5), (3, 3), (3, 3), (3, 3)      # 2d kernal size
-        self.s1, self.s2, self.s3, self.s4 = (2, 2), (2, 2), (2, 2), (2, 2)      # 2d strides
-        self.pd1, self.pd2, self.pd3, self.pd4 = (0, 0), (0, 0), (0, 0), (0, 0)  # 2d padding
-
-        self.fc4 = nn.Linear(2*self.CNN_embed_dim, self.fc_hidden1)
-        self.bn4 = nn.BatchNorm1d(self.fc_hidden1)
-        self.fc5 = nn.Linear(self.fc_hidden1, 64 * 4 * 4)
-        self.bn5 = nn.BatchNorm1d(64 * 4 * 4)
-        self.relu = nn.ReLU(inplace=True)
-
-        self.convTrans6 = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=self.k4, stride=self.s4,
-                               padding=self.pd4),
-            nn.BatchNorm2d(32, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-        self.convTrans7 = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=32, out_channels=8, kernel_size=self.k3, stride=self.s3,
-                               padding=self.pd3),
-            nn.BatchNorm2d(8, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-        self.convTrans8 = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=8, out_channels=3, kernel_size=self.k2, stride=self.s2,
-                               padding=self.pd2),
-            nn.BatchNorm2d(3, momentum=0.01),
-            nn.Sigmoid()    # y = (y1, y2, y3) \in [0 ,1]^3
-        )
-
-    def forward(self, style_z, content_z):
+    
+    def decode(self, style_z, content_z):
         x = torch.cat((style_z, content_z), dim=1)
-        x = self.relu(self.bn4(self.fc4(x)))
-        x = self.relu(self.bn5(self.fc5(x))).view(-1, 64, 4, 4)
-        x = self.convTrans6(x)
-        x = self.convTrans7(x)
-        x = self.convTrans8(x)
+        x = self.block3(x)
+        x = self.block4(x).view(-1, 64, 4, 4)
+        x = self.convTrans7(self.convTrans6(self.convTrans5(x)))
         x = nn.functional.interpolate(x, size=(224, 224), mode='bilinear')
 
         return x
-'''
+    
+    def extract_features(self, input, feature_layers = None):
+        """
+        Extracts the features from the pretrained model
+        at the layers indicated by feature_layers.
+        :param input: (Tensor) [B x C x H x W]
+        :param feature_layers: List of string of IDs
+        :return: List of the extracted features
+        """
+        if feature_layers is None:
+            feature_layers = ['14', '24', '34', '43']
+        features = []
+        result = input
+        for (key, module) in self.feature_network.features._modules.items():
+            result = module(result)
+            if(key in feature_layers):
+                features.append(result)
+
+        return features

@@ -9,7 +9,7 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 
-from networks1 import DFCVAE
+from networks1 import Encoder, Decoder
 import utils
 from utils import reparameterize, group_wise_reparameterize, accumulate_group_evidence
 import alternate_data_loader
@@ -18,13 +18,18 @@ def training_procedure(FLAGS):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # load data set and create data loader instance
-    print('Loading clevr training data...')
-    ds = alternate_data_loader.clever_change()
-    train_loader = DataLoader(ds, batch_size=FLAGS.batch_size, drop_last=True)
+    print('Loading CLEVR-change training data...')
+    ds = alternate_data_loader.clever_change(utils.transform_config1)
+    train_sampler, _ = utils.subset_sampler(ds, 10, 0.3, True, random_seed=42)
+    train_loader = DataLoader(ds, batch_size=FLAGS.batch_size, sampler=train_sampler, drop_last=True)
 
     # model definition
-    model = DFCVAE()
-    model.to(device=device)
+    encoder = Encoder()
+    decoder = Decoder()
+    # encoder.apply(utils.weights_init)
+    # decoder.apply(utils.weights_init)
+    encoder.to(device=device)
+    decoder.to(device=device)
 
     # load saved models if load_saved flag is true
     if FLAGS.load_saved:
@@ -33,7 +38,7 @@ def training_procedure(FLAGS):
 
     # optimizer definition
     auto_encoder_optimizer = optim.Adam(
-        model.parameters(),
+        list(encoder.parameters()) + list(decoder.parameters()),
         lr=FLAGS.initial_learning_rate,
         betas=(FLAGS.beta_1, FLAGS.beta_2)
     )
@@ -58,58 +63,62 @@ def training_procedure(FLAGS):
         total_loss = 0
         iteration = 0
 
-        for batch_index, (X, y) in enumerate(train_loader):
+        for i in range(300):
             # set zero_grad for the optimizer
             auto_encoder_optimizer.zero_grad()
 
-            # move to cuda
+            # load a mini-batch
+            X = torch.empty(size=(2,) + ds.data_dim)
+            y = torch.empty(size=(2,))
+            X[0] = ds[32][0]
+            X[1] = ds[32][0]
+            y[0] = ds[32][1]
+            y[1] = ds[32][1]
             X = X.to(device=device)
             y = y.to(device=device)
 
-            style_mu, style_logvar, content_mu, content_logvar = model.encode(X)
+            style_mu, style_logvar, content_mu, content_logvar = encoder(X)
             # put all content stuff into group in the grouping/evidence-accumulation stage
             group_mu, group_logvar = accumulate_group_evidence(
-                content_mu.data, content_logvar.data, y
+                content_mu.data, content_logvar.data, y, FLAGS.cuda
             )
 
-            # KL-divergence errors
-            style_kl = -0.5*torch.sum(1+style_logvar-style_mu.pow(2)-style_logvar.exp())
-            content_kl = -0.5*torch.sum(1+group_logvar-group_mu.pow(2)-group_logvar.exp())
+            # kl-divergence error for style latent space
+            style_kl = -0.5 * torch.sum(1 + style_logvar - style_mu.pow(2) - style_logvar.exp())
             style_kl /= FLAGS.batch_size * np.prod(ds.data_dim)
+            style_kl.backward(retain_graph=True)
+
+            # kl-divergence error for content/group latent space
+            content_kl = -0.5 * torch.sum(1 + group_logvar - group_mu.pow(2) - group_logvar.exp())
             content_kl /= FLAGS.batch_size * np.prod(ds.data_dim)
+            content_kl.backward(retain_graph=True)
+
+            # reconstruct samples
             """
             sampling from group mu and logvar for each image in mini-batch differently makes
             the decoder consider content latent embeddings as random noise and ignore them 
             """
-            # reconstruction error
+            # training param means calling the method when training
             style_z = reparameterize(training=True, mu=style_mu, logvar=style_logvar)
             content_z = group_wise_reparameterize(
                 training=True, mu=group_mu, logvar=group_logvar, labels_batch=y, cuda=FLAGS.cuda
             )
-            reconstruction = model.decode(style_z, content_z)
-            reconstruction_error = utils.mse_loss(reconstruction, X)
-            # feature loss
-            reconstruction_features = model.extract_features(reconstruction)
-            input_features = model.extract_features(X)
-            feature_loss = 0.0
-            for (r, i) in zip(reconstruction_features, input_features):
-                feature_loss += utils.mse_loss(r, i)
 
-            # total_loss
-            loss = 1*(reconstruction_error+feature_loss) + 1*(style_kl+content_kl)
-            loss.backward()
+            reconstruction = decoder(style_z, content_z)
+
+            reconstruction_error = utils.mse_loss(reconstruction, X)
+            reconstruction_error.backward()
 
             auto_encoder_optimizer.step()
 
-            total_loss += loss.detach()
+            total_loss += style_kl.detach().item() + content_kl.detach().item() + reconstruction_error.detach().item()
 
             # print losses
-            if (iteration + 1) % 10 == 0:
+            if (iteration + 1) % 50 == 0:
                 print('\tIteration #' + str(iteration))
                 print('Reconstruction loss: ' + str(reconstruction_error.data.storage().tolist()[0]))
                 print('Style KL loss: ' + str(style_kl.data.storage().tolist()[0]))
                 print('Content KL loss: ' + str(content_kl.data.storage().tolist()[0]))
-                print('Feature loss: ' + str(feature_loss.data.storage().tolist()[0]))
             iteration += 1
 
             # write to log
@@ -133,4 +142,5 @@ def training_procedure(FLAGS):
         print('Total KL loss: ' + str(total_loss))
 
         # save checkpoints after at every epoch
-        torch.save(model.state_dict(), os.path.join('/media/renyi/HDD/checkpoints', FLAGS.model_save))
+        torch.save(encoder.state_dict(), os.path.join('checkpoints', FLAGS.encoder_save))
+        torch.save(decoder.state_dict(), os.path.join('checkpoints', FLAGS.decoder_save))

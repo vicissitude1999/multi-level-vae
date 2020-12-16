@@ -105,7 +105,7 @@ def get_eta_error(save_recon_images, i, eta, X, encoder, maxlen):
 
 if __name__ == '__main__':
     # make necessary directories
-    save_recon_images = '/media/renyi/HDD/reconstructed_images5/'
+    save_recon_images = '/media/renyi/HDD/reconstructed_images-1/'
     cwd = os.getcwd()
     if not os.path.exists(save_recon_images):
         os.makedirs(save_recon_images)
@@ -153,7 +153,7 @@ if __name__ == '__main__':
 
     # loading dataset
     print('Loading CLEVR test data...')
-    ds = alternate_data_loader.clever_change(utils.transform_config2)
+    ds = alternate_data_loader.clever_change(utils.transform_config1)
     _, test_indices = utils.subset_sampler(ds, 10, 0.3, True, random_seed=42)
 
 
@@ -163,49 +163,23 @@ if __name__ == '__main__':
 
     
     # run on each test sample X_i
-    for i in test_indices: # Running X_i
+    for i in [32]: # Running X_i
         print('Running X_'+str(i))
         if not os.path.exists(save_recon_images + 'X_' + str(i)):
             os.makedirs(save_recon_images + 'X_' + str(i))
-        X = torch.empty(size=(10,) + ds.data_dim)
-        for j in range(10):
-            X[j] = ds[10*i + j][0]
-            '''
-            if not os.path.exists('/media/renyi/HDD/original_images/X_'+str(i)):
-                os.mkdir('/media/renyi/HDD/original_images/X_'+str(i))
-            dir_path = os.path.join('/media/renyi/HDD/original_images/', 'X_'+str(i), str(i)+'_'+str(j)+'.png')
-            save_image(X[j], dir_path)
-            '''
+        X = torch.empty(size=(2,) + ds.data_dim)
+        X[0] = ds[i][0]
+        X[1] = ds[i][0]
         X = X.to(device)
 
-        errors = {}
-        minimum_eta = 2
-        maximum_eta = 8
+        style_mu_bef, _, class_mu_bef, class_logvar_bef = encoder(X)
 
-        # partial is awesome
-        # eta_error_calc = partial(get_eta_error, i=i, encoder=encoder, X=X.detach(), maxlen=10)
-        for eta in range(minimum_eta, maximum_eta+1):
-            total_error = get_eta_error(save_recon_images, i, eta, X.detach(), encoder, maxlen=10)
-            errors[eta] = total_error
+        g1_reconstructions, bef_reconstruction_error = extract_reconstructions(X, style_mu_bef, class_mu_bef, class_logvar_bef)
 
-        # finished iterating through candidate change points
-        # get the argmin t
-        cp_hat = min(errors, key=errors.get)
-        cps_hat.append(cp_hat)
+        dir_path = os.path.join(save_recon_images, 'X_'+str(i))
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
 
-        plt.scatter(list(errors.keys()), list(errors.values()), s=0.9)
-        plt.axvline(x=cps[i])
-        plt.axvline(x=cp_hat, color='r')
-        plt.xlabel('etas')
-        plt.ylabel('squared errors')
-        plt.savefig(os.path.join('sqerrors', new_dir_name, 'clevr_X'+str(i)+'.jpg'))
-        plt.close()
-
-
-
-    with open(os.path.join('sqerrors', new_dir_name, 'predictions.txt'), 'w') as cps_r:
-        for tmp in cps_hat:
-            cps_r.write('{} '.format(tmp))
-        cps_r.write('\n')
-        for i in test_indices:
-            cps_r.write('{} '.format(cps[i]))
+        # plot the reconstructions
+        for k in range(2):
+            save_image(g1_reconstructions[k], dir_path+'/'+str(k)+'.png')

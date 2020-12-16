@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import PercentFormatter
 
 # names of 'run' folders to plot
-names = [1,2,3,4,6]
+names = [1, 2, 3, 4, 5]
 
 diffs = []
 means = []
@@ -51,12 +51,12 @@ for d in names:
         '''
 
 # plot the average of |eta - eta_hat| across test samples
-ticks = ['1','0.75','0.5','0.25','Unif(0,1)']
+ticks = ['Setting 1', 'Setting 2', 'Setting 3', 'Setting 4', 'Setting 5']
 plt.errorbar(ticks, means, yerr=stds, fmt='o')
 plt.xticks(ticks, ticks, fontsize=7)
-plt.xlabel('theta')
+plt.xlabel('Settings with different combinations of hyperparameters and data preprocessing')
 plt.ylabel('mean |eta-eta_hat| across all test samples')
-plt.title('mean |eta-eta_hat| (784-d original setting)')
+plt.title('mean |eta-eta_hat| (CLEVR data)')
 plt.show()
 plt.close()
 

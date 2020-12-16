@@ -144,38 +144,47 @@ class experiment3(Dataset):
 
         return (self.sample[d1, :, d2], label)
 
+# only use the RGB channels from RGBA
 class clever_change(Dataset):
-    def __init__(self, transform):
-        dir1 = os.path.join(os.getcwd(), 'nsc_images/')
+    def __init__(self):
+        dir1 = os.path.join('/media/renyi/HDD', 'nsc_images/')
         all_filenames = os.listdir(dir1)
-        self.transform = transform
+        self.transform = utils.transform_config1
         image_1 = Image.open(dir1 + all_filenames[0]).convert('RGB')
         self.data_dim = self.transform(image_1).shape
 
-        cps_dict = {}
+        cps = {}
         for filename in all_filenames:
             _, _, i, t = filename.split('_') # i-th image at time t
             t = int(t[:-4])
             i = int(i)
-            cps_dict[i] = cps_dict.get(i, 0) + 1
+            cps[i] = cps.get(i, 0) + 1
 
-        self.cps_dict = cps_dict
+        self.cps = cps
+        self.N = len(cps)
+        self.T = 10
 
     def __len__(self):
-        return 10*len(self.cps_dict)
+        return self.N*self.T
 
     def __getitem__(self, item):
-        i, t = item // 10, item % 10
+        i, t = item // self.T, item % self.T
 
-        if t < self.cps_dict[i]:
+        if t < self.cps[i]:
             label = 2*i
-            file_name = 'nsc_images/CLEVR_nonsemantic_'+ str(i).zfill(6)+'_'+ \
+            file_name = '/media/renyi/HDD/nsc_images/CLEVR_nonsemantic_'+ str(i).zfill(6)+'_'+ \
                         str(t)+'.png'
             img = Image.open(file_name).convert('RGB')
         else:
             label = 2*i+1
-            file_name = 'sc_images/CLEVR_semantic_'+ str(i).zfill(6)+'_'+ \
-                        str(t-self.cps_dict[i])+'.png'
+            file_name = '/media/renyi/HDD/sc_images/CLEVR_semantic_'+ str(i).zfill(6)+'_'+ \
+                        str(t-self.cps[i])+'.png'
             img = Image.open(file_name).convert('RGB')
 
         return self.transform(img), label
+
+    def get_time_series_sample(self, n):
+        X = torch.empty(size=(self.T,) + self.data_dim)
+        for t in range(self.T):
+            X[t] = self.__getitem__(self.T*n + t)[0]
+        return X

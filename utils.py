@@ -10,17 +10,18 @@ import numpy as np
 
 # compose a transform configuration
 transform_config = transforms.Compose([
+    transforms.Resize([64, 64]),
     transforms.ToTensor()
 ])
 
 transform_config1 = transforms.Compose([
-    transforms.Resize([224, 224]),
+    transforms.Resize([64, 64]),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
 transform_config2 = transforms.Compose([
-    transforms.Resize([64, 64]),
+    transforms.Resize([224, 224]),
     transforms.ToTensor()
 ])
 
@@ -154,13 +155,12 @@ def weights_init(layer):
 
 def subset_sampler(ds, T, test_split, shuffle, random_seed):
     n = len(ds) // T
-    print(n)
     indices = list(range(n))
     split = int(np.floor(test_split * n))
     if shuffle:
         np.random.seed(random_seed)
         np.random.shuffle(indices)
-    train_indices, test_indices = indices[split:], indices[:split]
+    train_indices, test_indices = indices[split:], indices[0:100]
     train_indices_individuals = [j for i in train_indices for j in range(10*i, 10*i+10)]
     train_sampler = SubsetRandomSampler(train_indices_individuals)
 
