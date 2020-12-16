@@ -8,174 +8,289 @@ from PIL import Image
 import utils
 from torchvision import datasets
 from torch.utils.data import Dataset
+from torchvision.utils import save_image
 
 
-class MNIST_Paired(Dataset):
-    def __init__(self, root='mnist', download=True, train=True, transform=utils.transform_config):
-        self.mnist = datasets.MNIST(root=root, download=download, train=train, transform=transform)
+root_dir = '/media/renyi/HDD/'
 
-        self.data_dict = {}
+'''
+n = 10000
+ds_train = datasets.CelebA(root=root_dir, download=True, split='train', transform=utils.transform_config)
+men = []
+women = []
+for i in range(n):
+    if ds_train[i][1][20] == 1:
+        men.append(i)
+    else:
+        women.append(i)
+with open(os.path.join(root_dir, 'celeba', 'men.pickle'), 'wb') as f:
+    pickle.dump(men, f)
+with open(os.path.join(root_dir, 'celeba', 'women.pickle'), 'wb') as f:
+    pickle.dump(women, f)
+'''
 
-        for i in range(self.__len__()):
-            image, label = self.mnist.__getitem__(i)
-
-            try:
-                self.data_dict[label.item()]
-            except KeyError:
-                self.data_dict[label.item()] = []
-            self.data_dict[label.item()].append(image)
-
-    def __len__(self):
-        return self.mnist.__len__()
-
-    def __getitem__(self, index):
-        image, label = self.mnist.__getitem__(index)
-
-        # return another image of the same class randomly selected from the data dictionary
-        # this is done to simulate pair-wise labeling of data
-        return image, random.SystemRandom().choice(self.data_dict[label.item()]), label
-
-
-class DoubleUniNormal(Dataset):
-    def __init__(self, dsname):
-        root_dir = os.getcwd()
-        file_name = os.path.join(root_dir, 'data', dsname)
-        with open(file_name, 'rb') as f:
-            dataset = pickle.load(f)
-        self.x_train, self.y_train, self.x_test, self.y_test = dataset
-        self.T = len(self.x_test[0])
-        # self.x_test = self.x_test.astype(float)
-
-    def __len__(self):
-        return self.x_train.size
-
-    def __getitem__(self, idx):
-        _, T = self.x_train.shape # 1500 by 100
-        row = idx // T
-        column = idx % T
-
-        if column < self.y_train[row]:
-            label = 2*row
-        else:
-            label = 2*row + 1
-
-        return (self.x_train[row, column].reshape(1), label)
+'''
+n = 1000
+ds_train = datasets.CelebA(root=root_dir, download=True, split='test', transform=utils.transform_config)
+men = []
+women = []
+for i in range(n):
+    if ds_train[i][1][20] == 1:
+        men.append(i)
+    else:
+        women.append(i)
+with open(os.path.join(root_dir, 'celeba', 'men1.pickle'), 'wb') as f:
+    pickle.dump(men, f)
+with open(os.path.join(root_dir, 'celeba', 'women1.pickle'), 'wb') as f:
+    pickle.dump(women, f)
+'''
 
 
-class DoubleMulNormal(Dataset):
-    def __init__(self, dsname):
-        root_dir = os.getcwd()
-        file_name = os.path.join(root_dir, 'data', dsname)
-        with open(file_name, 'rb') as f:
-            dataset = pickle.load(f)
-        self.x_train, self.y_train, self.x_test, self.y_test = dataset
-        self.T = self.x_train.shape[2]
-
-    def __len__(self):
-        n, d, T = self.x_train.shape
-        return n*T
-
-    def __getitem__(self, idx):
-        n, d, T = self.x_train.shape
-        row = idx // T
-        column = idx % T
-
-        if column < self.y_train[row]:
-            label = 2*row
-        else:
-            label = 2*row + 1
-
-        # print(self.x_train[row, : , column].shape)
-        return (self.x_train[row, : ,column], label)
-
-
-class experiment3(Dataset):
-    def __init__(self, n, T, cp_way):
+class celeba(Dataset):
+    def __init__(self, n, T):
         self.n = n
         self.T = int(T)
-        self.mnist = datasets.MNIST(root='mnist', download=True, train=True, transform=utils.transform_config)
-        self.mnist.data = np.true_divide(self.mnist.data, 255)
-        self.labels = []
-        self.cps = []
+        self.ds_train = datasets.CelebA(root='/media/renyi/HDD/', download=True, split='train', transform=utils.transform_config2)
+        self.data_dim = self.ds_train[0][0].size()
 
-        # data is X, label is y
-        outputs_to_concat = []
-        possible_cps = []
-        if cp_way == 1: # fixed cp value
-            possible_cps = [T//2]
-        elif cp_way == 2: # set pf possible cp values
-            possible_cps = [T//2, T//3, T//4]
-        elif cp_way == 3: # interval of cp values
-            possible_cps = list(range(T//4, 3*T//4+1, 1))
+        possible_cps = [2,3,4,5,6,7,8]
+        random.seed(7)
+        cps = [random.sample(possible_cps, 1)[0] for _ in range(n)]
+        self.cps = cps
+        self.men_indices = [i for i in range(n*T) if (i%T < cps[i//T])]
+        self.women_indices = [i for i in range(n*T) if (i%T >= cps[i//T])]
 
-        for i in range(n):
-            i1, i2 = random.sample(range(10), 2) # sample 2 digits
-            cp = random.sample(possible_cps, 1)[0] # sample change point
-
-            data1 = self.mnist.data[self.mnist.targets == i1]
-            idx1 = random.sample(range(data1.size(0)), cp)
-            part1 = data1.view(data1.size(0), -1)[idx1]
-            part1 = torch.transpose(part1, 0, 1) # convert it to 784 by l dimension
-
-            data2 = self.mnist.data[self.mnist.targets == i2]
-            idx2 = random.sample(range(data2.size(0)), T-cp)
-            part2 = data2.view(data2.size(0), -1)[idx2]
-            part2 = torch.transpose(part2, 0, 1)
-
-            row = torch.cat((part1, part2), dim=1)
-            outputs_to_concat.append(row)
-
-            # i1, i2 if repetitive labels, otherwisse just 2n many
-            self.labels.append([2*i, 2*i+1])
-            self.cps.append(cp)
-
-        self.sample = torch.stack(outputs_to_concat, dim=0) # get the finally formatted date
+        with open(os.path.join(root_dir, 'celeba', 'men.pickle'), 'rb') as f:
+            self.men = pickle.load(f)
+        with open(os.path.join(root_dir, 'celeba', 'women.pickle'), 'rb') as f:
+            self.women = pickle.load(f)
+        
+        self.map = {}
+        l1 = len(self.men_indices)
+        l2 = len(self.men)
+        l3 = len(self.women_indices)
+        l4 = len(self.women)
+        for i in range(l1):
+            self.map[self.men_indices[i]] = self.men[i % l2]
+        for i in range(l3):
+            self.map[self.women_indices[i]] = self.women[i % l4]
 
     def __len__(self):
         return self.n*self.T
-
+    
     def __getitem__(self, idx):
-        d1 = idx // self.T
-        d2 = idx % self.T
-        if d2 < self.cps[d1]:
-            label = self.labels[d1][0]
+        if idx%self.T < self.cps[idx//self.T]:
+            label = 2*(idx//self.T)
         else:
-            label = self.labels[d1][1]
+            label = 2*(idx//self.T) + 1
 
-        return (self.sample[d1, :, d2], label)
+        return self.ds_train[self.map[idx]][0], label
+    
 
-class clever_change(Dataset):
-    def __init__(self, transform):
-        dir1 = os.path.join(os.getcwd(), 'nsc_images/')
-        all_filenames = os.listdir(dir1)
-        self.transform = transform
-        image_1 = Image.open(dir1 + all_filenames[0]).convert('RGB')
-        self.data_dim = self.transform(image_1).shape
+class celeba_test(Dataset):
+    def __init__(self, N, T):
+        self.N = N
+        self.T = int(T)
+        self.ds_train = datasets.CelebA(root='/media/renyi/HDD/', download=True, split='test', transform=utils.transform_config2)
+        self.data_dim = self.ds_train[0][0].size()
 
-        cps_dict = {}
-        for filename in all_filenames:
-            _, _, i, t = filename.split('_') # i-th image at time t
-            t = int(t[:-4])
-            i = int(i)
-            cps_dict[i] = cps_dict.get(i, 0) + 1
+        possible_cps = [2,3,4,5,6,7,8]
+        random.seed(7)
+        cps = [random.sample(possible_cps, 1)[0] for _ in range(N)]
+        self.cps = cps
+        self.men_indices = [i for i in range(N*T) if (i%T < cps[i//T])]
+        self.women_indices = [i for i in range(N*T) if (i%T >= cps[i//T])]
 
-        self.cps_dict = cps_dict
+        with open(os.path.join(root_dir, 'celeba', 'men1.pickle'), 'rb') as f:
+            self.men = pickle.load(f)
+        with open(os.path.join(root_dir, 'celeba', 'women1.pickle'), 'rb') as f:
+            self.women = pickle.load(f)
+        
+        self.map = {}
+        l1 = len(self.men_indices)
+        l2 = len(self.men)
+        l3 = len(self.women_indices)
+        l4 = len(self.women)
+        for i in range(l1):
+            self.map[self.men_indices[i]] = self.men[i % l2]
+        for i in range(l3):
+            self.map[self.women_indices[i]] = self.women[i % l4]
 
     def __len__(self):
-        return 10*len(self.cps_dict)
-
-    def __getitem__(self, item):
-        i, t = item // 10, item % 10
-
-        if t < self.cps_dict[i]:
-            label = 2*i
-            file_name = 'nsc_images/CLEVR_nonsemantic_'+ str(i).zfill(6)+'_'+ \
-                        str(t)+'.png'
-            img = Image.open(file_name).convert('RGB')
+        return self.N*self.T
+    
+    def __getitem__(self, idx):
+        if idx%self.T < self.cps[idx//self.T]:
+            label = 2*(idx//self.T)
         else:
-            label = 2*i+1
-            file_name = 'sc_images/CLEVR_semantic_'+ str(i).zfill(6)+'_'+ \
-                        str(t-self.cps_dict[i])+'.png'
-            img = Image.open(file_name).convert('RGB')
+            label = 2*(idx//self.T) + 1
 
-        return self.transform(img), label
+        return self.ds_train[self.map[idx]][0], label
+    
+    def get_time_series_sample(self, n):
+        X = torch.empty(size=(self.T,) + self.data_dim)
+        for t in range(self.T):
+            X[t] = self.__getitem__(self.T*n + t)[0]
+        return X
+
+
+
+
+class celeba_classification(Dataset):
+    def __init__(self, n, T):
+        self.n = n
+        self.T = int(T)
+        self.ds_train = datasets.CelebA(root='/media/renyi/HDD/', download=True, split='train', transform=utils.transform_config2)
+        self.data_dim = self.ds_train[0][0].size()
+
+        possible_cps = [2,3,4,5,6,7,8]
+        random.seed(7)
+        cps = [random.sample(possible_cps, 1)[0] for _ in range(n)]
+        self.cps = cps
+        self.men_indices = [i for i in range(n*T) if (i%T < cps[i//T])]
+        self.women_indices = [i for i in range(n*T) if (i%T >= cps[i//T])]
+
+        with open(os.path.join(root_dir, 'celeba', 'men.pickle'), 'rb') as f:
+            self.men = pickle.load(f)
+        with open(os.path.join(root_dir, 'celeba', 'women.pickle'), 'rb') as f:
+            self.women = pickle.load(f)
+        
+        self.map = {}
+        l1 = len(self.men_indices)
+        l2 = len(self.men)
+        l3 = len(self.women_indices)
+        l4 = len(self.women)
+        for i in range(l1):
+            self.map[self.men_indices[i]] = self.men[i % l2]
+        for i in range(l3):
+            self.map[self.women_indices[i]] = self.women[i % l4]
+
+    def __len__(self):
+        return self.n*self.T
+    
+    def __getitem__(self, idx):
+        if idx in self.men_indices:
+            label = 1
+        else:
+            label = 0
+
+        return self.ds_train[self.map[idx]][0], label
+
+
+class celeba_test_classification(Dataset):
+    def __init__(self, N, T):
+        self.N = N
+        self.T = int(T)
+        self.ds_train = datasets.CelebA(root='/media/renyi/HDD/', download=True, split='test', transform=utils.transform_config2)
+        self.data_dim = self.ds_train[0][0].size()
+
+        possible_cps = [2,3,4,5,6,7,8]
+        random.seed(7)
+        cps = [random.sample(possible_cps, 1)[0] for _ in range(N)]
+        self.cps = cps
+        self.men_indices = [i for i in range(N*T) if (i%T < cps[i//T])]
+        self.women_indices = [i for i in range(N*T) if (i%T >= cps[i//T])]
+
+        with open(os.path.join(root_dir, 'celeba', 'men1.pickle'), 'rb') as f:
+            self.men = pickle.load(f)
+        with open(os.path.join(root_dir, 'celeba', 'women1.pickle'), 'rb') as f:
+            self.women = pickle.load(f)
+        
+        self.map = {}
+        l1 = len(self.men_indices)
+        l2 = len(self.men)
+        l3 = len(self.women_indices)
+        l4 = len(self.women)
+        for i in range(l1):
+            self.map[self.men_indices[i]] = self.men[i % l2]
+        for i in range(l3):
+            self.map[self.women_indices[i]] = self.women[i % l4]
+
+    def __len__(self):
+        return self.N*self.T
+    
+    def __getitem__(self, idx):
+        if idx in self.men_indices:
+            label = 1
+        else:
+            label = 0
+
+        return self.ds_train[self.map[idx]][0], label
+    
+    def get_time_series_sample(self, n):
+        X = torch.empty(size=(self.T,) + self.data_dim)
+        for t in range(self.T):
+            X[t] = self.__getitem__(self.T*n + t)[0]
+        return X
+
+
+
+
+class celeba_change_person(Dataset):
+    def __init__(self, n, T):
+        self.n = n
+        self.T = int(T)
+        self.ds_train = datasets.CelebA(root='/media/renyi/HDD/', download=True, split='train', transform=utils.transform_config2)
+        self.data_dim = self.ds_train[0][0].size()
+
+        possible_cps = [2,3,4,5,6,7,8]
+        random.seed(7)
+        cps = [random.sample(possible_cps, 1)[0] for _ in range(n)]
+        self.cps = cps
+        self.men_indices = [i for i in range(n*T) if (i%T < cps[i//T])]
+        self.women_indices = [i for i in range(n*T) if (i%T >= cps[i//T])]
+
+        self.groups_iterated = {}
+
+    def __len__(self):
+        return self.n*self.T
+    
+    def __getitem__(self, idx):
+        t = idx % self.T
+        row = idx // self.T
+        label = 2*row if t < self.cps[row] else 2*row + 1
+
+        if label not in self.groups_iterated:
+            idx = random.choice(range(10000))
+            self.groups_iterated[label] = idx
+        sample = self.ds_train[self.groups_iterated[label]][0]
+
+        return sample, label
+    
+
+class celeba_test_change_person(Dataset):
+    def __init__(self, n, T):
+        self.n = n
+        self.T = int(T)
+        self.ds_train = datasets.CelebA(root='/media/renyi/HDD/', download=True, split='train', transform=utils.transform_config2)
+        self.data_dim = self.ds_train[0][0].size()
+
+        possible_cps = [2,3,4,5,6,7,8]
+        random.seed(7)
+        cps = [random.sample(possible_cps, 1)[0] for _ in range(n)]
+        self.cps = cps
+        self.men_indices = [i for i in range(n*T) if (i%T < cps[i//T])]
+        self.women_indices = [i for i in range(n*T) if (i%T >= cps[i//T])]
+
+        self.groups_iterated = {}
+
+    def __len__(self):
+        return self.n*self.T
+    
+    def __getitem__(self, idx):
+        t = idx % self.T
+        row = idx // self.T
+        label = 2*row if t < self.cps[row] else 2*row + 1
+
+        if label not in self.groups_iterated:
+            idx = random.choice(range(10000))
+            self.groups_iterated[label] = idx
+        sample = self.ds_train[self.groups_iterated[label]][0]
+
+        return sample, label
+    
+    def get_time_series_sample(self, n):
+        X = torch.empty(size=(self.T,) + self.data_dim)
+        for t in range(self.T):
+            X[t] = self.__getitem__(self.T*n + t)[0]
+        return X

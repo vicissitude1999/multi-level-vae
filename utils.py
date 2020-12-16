@@ -10,6 +10,7 @@ import numpy as np
 
 # compose a transform configuration
 transform_config = transforms.Compose([
+    transforms.Resize([224, 224]),
     transforms.ToTensor()
 ])
 
@@ -24,7 +25,7 @@ transform_config2 = transforms.Compose([
     transforms.ToTensor()
 ])
 
-def accumulate_group_evidence(class_mu, class_logvar, labels_batch, is_cuda=True):
+def accumulate_group_evidence(class_mu, class_logvar, labels_batch):
     """
     :param class_mu: mu values for class latent embeddings of each sample in the mini-batch
     :param class_logvar: logvar values for class latent embeddings for each sample in the mini-batch
@@ -52,7 +53,7 @@ def accumulate_group_evidence(class_mu, class_logvar, labels_batch, is_cuda=True
             var_dict[group_label] = 1 / class_var[i]
 
     # invert var inverses to calculate mu and return value
-    for group_label in var_dict.keys():
+    for group_label in var_dict:
         var_dict[group_label] = 1 / var_dict[group_label]
 
     # calculate mu for each group
@@ -65,16 +66,15 @@ def accumulate_group_evidence(class_mu, class_logvar, labels_batch, is_cuda=True
             mu_dict[group_label] = class_mu[i] * (1 / class_var[i])
 
     # multiply group var with sums calculated above to get mu for the group
-    for group_label in mu_dict.keys():
+    for group_label in mu_dict:
         mu_dict[group_label] *= var_dict[group_label]
 
     # replace individual mu and logvar values for each sample with group mu and logvar
-    group_mu = torch.FloatTensor(class_mu.size(0), class_mu.size(1))
+    group_mu = torch.FloatTensor(class_mu.size(0), class_mu.size(1), )
     group_var = torch.FloatTensor(class_var.size(0), class_var.size(1))
 
-    if is_cuda:
-        group_mu = group_mu.cuda()
-        group_var = group_var.cuda()
+    group_mu = group_mu.cuda()
+    group_var = group_var.cuda()
 
     for i in range(len(labels_batch)):
         group_label = labels_batch[i].item()

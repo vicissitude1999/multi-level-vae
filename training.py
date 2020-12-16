@@ -9,7 +9,7 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 
-from networks1 import Encoder, Decoder
+from networks1 import DFCVAE
 import utils
 from utils import reparameterize, group_wise_reparameterize, accumulate_group_evidence
 import alternate_data_loader
@@ -18,18 +18,13 @@ def training_procedure(FLAGS):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # load data set and create data loader instance
-    print('Loading CLEVR-change training data...')
-    ds = alternate_data_loader.clever_change(utils.transform_config1)
-    train_sampler, _ = utils.subset_sampler(ds, 10, 0.3, True, random_seed=42)
-    train_loader = cycle(DataLoader(ds, batch_size=FLAGS.batch_size, sampler=train_sampler, drop_last=True))
+    print('Loading CelebA training data...')
+    ds = alternate_data_loader.celeba_test_change_person(1000, 10)
+    train_loader = DataLoader(ds, batch_size=FLAGS.batch_size, drop_last=True)
 
     # model definition
-    encoder = Encoder()
-    decoder = Decoder()
-    # encoder.apply(utils.weights_init)
-    # decoder.apply(utils.weights_init)
-    encoder.to(device=device)
-    decoder.to(device=device)
+    model = DFCVAE()
+    model.to(device=device)
 
     # load saved models if load_saved flag is true
     if FLAGS.load_saved:
@@ -38,7 +33,7 @@ def training_procedure(FLAGS):
 
     # optimizer definition
     auto_encoder_optimizer = optim.Adam(
-        list(encoder.parameters()) + list(decoder.parameters()),
+        model.parameters(),
         lr=FLAGS.initial_learning_rate,
         betas=(FLAGS.beta_1, FLAGS.beta_2)
     )
@@ -61,59 +56,61 @@ def training_procedure(FLAGS):
 
         # the total loss at each epoch after running iterations of batches
         total_loss = 0
-        num_iterations = int(len(ds)*0.7 // FLAGS.batch_size)
+        iteration = 0
 
-        for iteration in range(num_iterations):
+        for batch_index, (X, y) in enumerate(train_loader):
             # set zero_grad for the optimizer
             auto_encoder_optimizer.zero_grad()
 
-            # load a mini-batch
-            image_batch, labels_batch = next(train_loader)
-            image_batch = image_batch.to(device=device)
-            labels_batch = labels_batch.to(device=device)
+            # move to cuda
+            X = X.to(device=device)
+            y = y.to(device=device)
 
-            style_mu, style_logvar, content_mu, content_logvar = encoder(image_batch)
+            style_mu, style_logvar, content_mu, content_logvar = model.encode(X)
             # put all content stuff into group in the grouping/evidence-accumulation stage
             group_mu, group_logvar = accumulate_group_evidence(
-                content_mu.data, content_logvar.data, labels_batch, FLAGS.cuda
+                content_mu.data, content_logvar.data, y
             )
 
-            # kl-divergence error for style latent space
-            style_kl = -0.5 * torch.sum(1 + style_logvar - style_mu.pow(2) - style_logvar.exp())
+            # KL-divergence errors
+            style_kl = -0.5*torch.sum(1+style_logvar-style_mu.pow(2)-style_logvar.exp())
+            content_kl = -0.5*torch.sum(1+group_logvar-group_mu.pow(2)-group_logvar.exp())
             style_kl /= FLAGS.batch_size * np.prod(ds.data_dim)
-            style_kl.backward(retain_graph=True)
-
-            # kl-divergence error for content/group latent space
-            content_kl = -0.5 * torch.sum(1 + group_logvar - group_mu.pow(2) - group_logvar.exp())
             content_kl /= FLAGS.batch_size * np.prod(ds.data_dim)
-            content_kl.backward(retain_graph=True)
-
-            # reconstruct samples
             """
             sampling from group mu and logvar for each image in mini-batch differently makes
             the decoder consider content latent embeddings as random noise and ignore them 
             """
-            # training param means calling the method when training
+            # reconstruction error
             style_z = reparameterize(training=True, mu=style_mu, logvar=style_logvar)
             content_z = group_wise_reparameterize(
-                training=True, mu=group_mu, logvar=group_logvar, labels_batch=labels_batch, cuda=FLAGS.cuda
+                training=True, mu=group_mu, logvar=group_logvar, labels_batch=y, cuda=FLAGS.cuda
             )
+            reconstruction = model.decode(style_z, content_z)
+            reconstruction_error = utils.mse_loss(reconstruction, X)
+            # feature loss
+            reconstruction_features = model.extract_features(reconstruction)
+            input_features = model.extract_features(X)
+            feature_loss = 0.0
+            for (r, i) in zip(reconstruction_features, input_features):
+                feature_loss += utils.mse_loss(r, i)
 
-            reconstruction = decoder(style_z, content_z)
-
-            reconstruction_error = utils.mse_loss(reconstruction, image_batch)
-            reconstruction_error.backward()
+            # total_loss
+            loss = 1*(reconstruction_error+feature_loss) + 1*(style_kl+content_kl)
+            loss.backward()
 
             auto_encoder_optimizer.step()
 
-            total_loss += style_kl + content_kl + reconstruction_error
+            total_loss += loss.detach()
 
             # print losses
-            if (iteration + 1) % 3 == 0:
+            if (iteration + 1) % 10 == 0:
                 print('\tIteration #' + str(iteration))
                 print('Reconstruction loss: ' + str(reconstruction_error.data.storage().tolist()[0]))
                 print('Style KL loss: ' + str(style_kl.data.storage().tolist()[0]))
                 print('Content KL loss: ' + str(content_kl.data.storage().tolist()[0]))
+                print('Feature loss: ' + str(feature_loss.data.storage().tolist()[0]))
+            iteration += 1
 
             # write to log
             with open(FLAGS.log_file, 'a') as log:
@@ -133,8 +130,7 @@ def training_procedure(FLAGS):
             writer.add_scalar('content KL-Divergence loss', content_kl.data.storage().tolist()[0],
                             epoch * (int(len(ds) / FLAGS.batch_size) + 1) + iteration)
 
-        print('Total KL loss: ' + str(total_loss.item()))
+        print('Total KL loss: ' + str(total_loss))
 
         # save checkpoints after at every epoch
-        torch.save(encoder.state_dict(), os.path.join('checkpoints', 'encoder_clever'))
-        torch.save(decoder.state_dict(), os.path.join('checkpoints', 'decoder_clever'))
+        torch.save(model.state_dict(), os.path.join('/media/renyi/HDD/checkpoints', FLAGS.model_save))
